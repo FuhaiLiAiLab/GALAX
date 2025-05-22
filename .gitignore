@@ -1,0 +1,57 @@
+# pycache
+/__pycache__/*
+**.DS_Store
+**.pdf
+**.h5
+**.pyc
+
+# checkpoint
+# /ckpt/*
+/Checkpoints/finetuned_model/*
+/Checkpoints/gretriever/*
+
+/desert_code
+
+# # data download
+# /download_links.txt
+# /download.sh
+
+# data ignorance (BioMedGraphica-Conn, BMG_emb, DTI_data, Pretrain_data need to download for training) 
+/BMG/raw_data/
+# /BMG/process_data/
+/BMG/BioMedGraphica-Conn/
+/BMG/BMG_emb/
+/BMG/DTI_data/*.npy
+/BMG/DTI_data/bmgc_desc.csv
+/BMG/DTI_data/bmgc_name.csv
+/BMG/Pretrain_data/bmgc_omics_desc.csv
+/BMG/Pretrain_data/bmgc_omics_name.csv
+/BMG/Pretrain_data/*.npy
+/BMG/Pretrain_data/processed_crispr.csv
+/BMG/Pretrain_data/processed_rna.csv
+/BMG/CRISPR-Graph/*
+/BMG/TargetRanker/*
+
+/QA_Data/*.json
+/QA_Data/*.jsonl
+
+/QA_Results/
+/QA_Results-1/
+/QA_Results-2/
+
+/MOTASG_Results/DepMap/MOTASG_Class/desert
+/MOTASG_Results/DepMap/MOTASG_Class_gcn_gcn/
+/MOTASG_Results/DepMap/MOTASG_Class_gat_gat/
+/MOTASG_Results/DepMap/MOTASG_Class_transformer_transformer/
+/MOTASG_Results/DepMap/desert
+/MOTASG_Results/CRISPR/*
+/MOTASG_Analysis/
+/MOTASG_Analysis-1/
+
+/wandb/*
+
+/Plots/
+
+
+
+
