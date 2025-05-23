@@ -37,7 +37,7 @@ And put them under the folder ./BMG/raw
 Just run the ./BMG/process.ipynb to get the integrated multi-omics data and Target-QA data with 'multi_sample_qa_info_k{k}_bm{top_bm}.json' (e.g., k=10, top_bm=100). And run the ./BMG/medtune.ipynb to get the 'mixed_description.jsonl'.
 
 ## 4. Pretrain the language model
-Pretrain the llama3-8B-Instruct with 2 NVIDIA H100 (80G) GPUs with
+Pretrain the llama3-8B-Instruct with 2 NVIDIA H100 (80G) GPUs by
 ```
 accelerate launch --num_processes=4 pretrain_llama_fa.py
 ```
@@ -63,7 +63,7 @@ python qa_train_test.py
 
 
 ### 6.2 Run the model
-Pretrain the initial answering
+Pretrain the initial answering with 2 NVIDIA H100 (80G) GPUs by
 ```
 accelerate launch --multi_gpu --num_processes=4 --mixed_precision=bf16 finetune_llama.py
 ```
@@ -73,7 +73,7 @@ Then, run the GALAX reasoning with explainable subgraph
 python GALAX.py
 ```
 
-Then finetune the 2nd stage / final answering
+Then finetune the 2nd stage / final answering with 2 NVIDIA H100 (80G) GPUs by
 ```
 accelerate launch --multi_gpu --num_processes=4 --mixed_precision=bf16 finetune_llama_2nd_step.py
 ```
