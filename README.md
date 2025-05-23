@@ -65,7 +65,7 @@ python qa_train_test.py
 ### 6.2 Run the model
 Pretrain the initial answering
 ```
-python finetune_llama.py
+accelerate launch --multi_gpu --num_processes=4 --mixed_precision=bf16 finetune_llama.py
 ```
 
 Then, run the GALAX reasoning with explainable subgraph
@@ -75,7 +75,7 @@ python GALAX.py
 
 Then finetune the 2nd stage / final answering
 ```
-python finetune_llama_2nd_step.py
+accelerate launch --multi_gpu --num_processes=4 --mixed_precision=bf16 finetune_llama_2nd_step.py
 ```
 
 
