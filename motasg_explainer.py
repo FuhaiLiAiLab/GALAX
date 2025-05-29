@@ -1105,57 +1105,6 @@ def kg_data(args, device):
     return xAll_omics, omics_node_index_df, name_embeddings, desc_embeddings, all_edge_index, internal_edge_index, ppi_edge_index, ppi_edges
 
 
-def prepare_sample_data(pretrain_model, model, xAll_omics, name_embeddings, desc_embeddings, 
-                     all_edge_index, internal_edge_index, ppi_edge_index, 
-                     selected_sample_index, device):
-    """
-    Prepares sample data for explanation by loading and encoding a specific sample.
-    
-    Args:
-        pretrain_model: Pre-trained GNN model for classification
-        model: Model to be explained
-        xAll_omics: Omics data for all samples
-        name_embeddings: Name embeddings for nodes
-        desc_embeddings: Description embeddings for nodes
-        all_edge_index: All edges in the graph
-        internal_edge_index: Internal edges in the graph
-        ppi_edge_index: Protein-protein interaction edges
-        selected_sample_index: Index of the sample to be explained
-        device: Device to run the model on (CPU or CUDA)
-
-    Returns:
-        tuple: (selected_sample_x_emb, selected_sample_ach_name, selected_sample_disease_bmgc_id)
-        - selected_sample_x_emb: Encoded sample feature
-        - selected_sample_ach_name: Name of the selected sample
-        - selected_sample_disease_bmgc_id: Disease BMGC ID of the selected sample
-    """
-    # 1.1 Get the sample feature from xAll
-    dti_sample_index = pd.read_csv('./BMG/DTI_data/sample_index.csv')
-    selected_sample_x = xAll_omics[selected_sample_index, :].reshape(-1, 1)  # selected sample feature
-    
-    # 1.2 Encode selected_sample_x using the pretrained model and model
-    selected_sample_x_emb = pre_embed(pretrain_model, model, selected_sample_x, 
-                                    name_embeddings, desc_embeddings, 
-                                    all_edge_index, internal_edge_index, ppi_edge_index, device)
-    
-    # 1.3 Get the sample disease BMGC ID
-    dti_sample_info = pd.read_csv('./BMG/process_data/dti_combined_samples.csv')
-    dti_sample_info_index = pd.merge(dti_sample_info, dti_sample_index, 
-                                    how='inner', left_on='depMapID', 
-                                    right_on='Sample').drop(columns=['Sample'])
-    selected_sample_disease_bmgc_id = dti_sample_info_index.iloc[selected_sample_index]['BMGC_Disease_ID']
-    
-    # 1.4 Return selected sample cell line ach name and original name
-    selected_sample_ach_name = dti_sample_index.iloc[selected_sample_index]['Sample']
-    selected_sample_cell_line_name = dti_sample_info_index.iloc[selected_sample_index]['Name']
-
-    # 1.5 Print out the selected sample disease name
-    selected_sample_disease_name = dti_sample_info_index.iloc[selected_sample_index]['BMGC_Disease_name']
-    selected_sample_disease_name = selected_sample_disease_name.replace(" | ", " or ")  # replace " | " with " or "
-    
-    return selected_sample_x_emb, selected_sample_ach_name, selected_sample_cell_line_name, selected_sample_disease_bmgc_id, selected_sample_disease_name
-
-
 def bmgc_pt_id_to_hgnc(bmgc_id_list, bmgc_protein_df):
     """
     Convert a list of BioMedGraphica IDs to their corresponding HGNC symbols.
