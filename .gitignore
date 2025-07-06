@@ -1,0 +1,22 @@
+# pycache
+/__pycache__/*
+**.DS_Store
+**.pdf
+**.h5
+**.pyc
+
+
+# Downloaded data
+# raw_data
+/data/raw_data/*
+/data/BioMedGraphica-Conn/*
+/data/BMG_emb/*
+/data/process_data/*
+
+# processed data
+/data/pretrain_plain_data/*
+/data/pretrain_status_data/*
+/data/TargetScreen/*
+/data/TargetQA/*
+/data/DrugScreen/*
+/data/DrugQA/*

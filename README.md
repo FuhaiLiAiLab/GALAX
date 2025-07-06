@@ -2,7 +2,7 @@
 
 This repository is the official implementation of [GALAX](). 
 
-![Figure1](./Figures/Figure2.png)
+![Figure1](./figures/Figure2.png)
 
 ## Requirements
 
@@ -13,7 +13,7 @@ pip install -r requirements.txt
 ```
 
 ## 1. Download BioMedical Knowledge Graph
-Check the website at [BioMedGraphica](https://github.com/FuhaiLiAiLab/BioMedGraphica) and download it to the path './BMG'
+Check the website at [BioMedGraphica](https://github.com/FuhaiLiAiLab/BioMedGraphica) and download it to the path './data'
 
 Then, run the code in each folder with entity and relation, with acquiring entities and relations.
 
@@ -31,7 +31,7 @@ Check the website at [DepMap](https://depmap.org/portal/data_page/?tab=overview)
 | Cell line annotation    | cellosaurus.obo                        | [Link](https://ftp.expasy.org/databases/cellosaurus/cellosaurus.obo)            |
 | Cell line status        | cell-lines-in-Non-Cancerous.csv        | [Link](https://depmap.org/portal/context/Non-Cancerous)                          |
 
-And put them under the folder ./BMG/raw
+And put them under the folder ./data/raw_data
 
 ## 3. Process the data
 Just run the ./BMG/process.ipynb to get the integrated multi-omics data and Target-QA data with 'multi_sample_qa_info_k{k}_bm{top_bm}.json' (e.g., k=10, top_bm=100). And run the ./BMG/medtune.ipynb to get the 'mixed_description.jsonl'.
