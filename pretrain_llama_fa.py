@@ -255,7 +255,7 @@ def finetune(args, device):
     # base_model_name = "meta-llama/Llama-2-7b-chat-hf"
     base_model_name = "meta-llama/Meta-Llama-3-8B-Instruct"
     finetuned_model_name = f"BioEntity-LLM-{run_timestamp}"
-    output_dir = os.path.join("Checkpoints", "finetuned_model", finetuned_model_name)
+    output_dir = os.path.join("checkpoints", finetuned_model_name)
     Path(output_dir).mkdir(parents=True, exist_ok=True)
 
     # Initialize wandb here
@@ -284,7 +284,7 @@ def finetune(args, device):
     logger.info(f"Training logs will be saved to {log_file_path}")
 
     # You can use either the original QA data or the new jsonl data based on args
-    jsonl_path = "./QA_Data/mixed_description.jsonl"
+    jsonl_path = "./data/TargetPretrain/mixed_description.jsonl"
     logger.info(f"Loading entity description data from {jsonl_path}")
     training_data = prepare_training_data_from_jsonl(jsonl_path)
 

@@ -337,7 +337,7 @@ def finetune(args, device, run_timestamp):
             project=wandb_project_name,
             name=wandb_run_name,
             config={
-                "base_model": './Checkpoints/finetuned_model/BioEntity-LLM-20250421_045108/checkpoint-336',
+                "base_model": './checkpoints/BioEntity-LLM-20250421_045108/checkpoint-336',
                 "num_epochs": 5,
                 "batch_size": 1,
                 "learning_rate": 1e-5,
@@ -352,14 +352,14 @@ def finetune(args, device, run_timestamp):
         os.environ["WANDB_MODE"] = "disabled"
     
     # Check if a local model path is provided
-    base_model_name = './Checkpoints/finetuned_model/BioEntity-LLM-20250421_045108/checkpoint-336'
+    base_model_name = './checkpoints/BioEntity-LLM-20250421_045108/checkpoint-336'
     logger.info(f"Loading model from local path: {base_model_name}")
 
     finetuned_model_name = wandb_run_name
     output_dir = os.path.join("Checkpoints", "finetuned_model", finetuned_model_name)
     Path(output_dir).mkdir(parents=True, exist_ok=True)
 
-    json_path = "./QA_Data/multi_sample_qa_info_k100_bm100_tr.json"
+    json_path = "./TargetQA/target_qa_info_k10_bm100_tr.json"
     logger.info(f"Loading QA data from {json_path}")
     with open(json_path, "r") as f:
         qa_info_data = json.load(f)
@@ -580,7 +580,7 @@ def load_and_test_model(model_path, device):
     )
     
     # Test prompts
-    test_json_path = "./QA_Data/multi_sample_qa_info_k100_bm100_te.json"
+    test_json_path = "./TargetQA/target_qa_info_k10_bm100_te.json"
     test_prompts = load_test_prompts_from_json(test_json_path, num_samples=2)
     
     logger.info("Running test prompts...")
@@ -639,7 +639,7 @@ if __name__ == "__main__":
     finetune(args, device, run_timestamp)
 
     # # Model path to load
-    # model_path = './Checkpoints/finetuned_model/CRISPR-QA-20250424_164126/checkpoint-75'
+    # model_path = './checkpoints/CRISPR-QA-20250424_164126/checkpoint-75'
     # # Load and test the model
     # model, tokenizer, pipe = load_and_test_model(model_path, device)
     # # Interactive mode

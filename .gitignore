@@ -16,6 +16,7 @@
 # processed data
 /data/pretrain_plain_data/*
 /data/pretrain_status_data/*
+/data/TargetPretrain/*
 /data/TargetScreen/*
 /data/TargetQA/*
 /data/DrugScreen/*
