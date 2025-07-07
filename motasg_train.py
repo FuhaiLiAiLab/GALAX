@@ -787,7 +787,7 @@ def arg_parse():
     parser.add_argument('--train_weight_decay', type=float, default=1e-15, help='Weight decay for Adam optimizer. (default: 1e-15)')
     parser.add_argument('--train_encoder_dropout', type=float, default=0.1, help='Dropout probability of encoder. (default: 0.1)')
 
-    parser.add_argument('--num_train_epoch', type=int, default=50, help='Number of training epochs. (default: 50)')
+    parser.add_argument('--num_train_epoch', type=int, default=20, help='Number of training epochs. (default: 20)')
     parser.add_argument('--train_batch_size', type=int, default=2, help='Batch size for training. (default: 2)')
     parser.add_argument('--train_num_workers', type=int, default=0, help='Number of workers to load data.')
 
@@ -846,7 +846,7 @@ if __name__ == "__main__":
     # yTe = np.load(os.path.join(args.data_path, 'pretrain_status_test_label.npy'))
     # print(xTe.shape, yTe.shape)
     # # Load both pretrain_model and downstream model from combined checkpoint
-    # combined_checkpoint_path = './MOTASG_Results/DepMap/MOTASG_Class_gat_gat/epoch_50/best_combined_model.pt'
+    # combined_checkpoint_path = './MOTASG_Results/DepMap/MOTASG_Class_gat_gat/epoch_20/best_combined_model.pt'
     # pretrain_model, model, checkpoint_info = load_combined_model(combined_checkpoint_path, args, device)
     # print(f"Loaded combined model from epoch {checkpoint_info['epoch']}")
     # print(f"Model test F1: {checkpoint_info['max_test_f1']}")
