@@ -13,7 +13,7 @@ from MOTASG_Foundation.model import MOTASG_Foundation, DegreeDecoder, EdgeDecode
 from MOTASG_Foundation.mask import MaskEdge
 
 # custom dataloader
-from GeoDataLoader.read_geograph import read_index_batch
+from GeoDataLoader.read_geograph import read_batch
 from GeoDataLoader.geograph_sampler import GeoGraphLoader
 
 from sklearn.metrics import accuracy_score, f1_score, confusion_matrix, precision_score, recall_score
@@ -212,7 +212,6 @@ def train_model(train_dataset_loader, current_cell_num, num_entity, protein_node
         cross_x = pretrain_model.cross_modal_fusion(merged_emb) + x
         z = pretrain_model.internal_encoder(cross_x, internal_edge_index)
         pre_x = pretrain_model.encoder.get_embedding(z, ppi_edge_index, mode='last') # mode='cat'
-        # import pdb; pdb.set_trace()
         # Continue training the model
         output, ypred = model(x, pre_x, edge_index, internal_edge_index, ppi_edge_index, num_entity, protein_node_index, name_embeddings, desc_embeddings, current_cell_num)
         loss = model.loss(output, label)
@@ -271,127 +270,114 @@ def test_model(test_dataset_loader, current_cell_num, num_entity, protein_node_i
     return model, batch_loss, batch_acc, all_ypred
 
 
-def stratified_sample_data(data, sample_ratio=1.0, random_seed=42):
-    """
-    Perform stratified sampling on the input data to maintain class distribution.
-    
-    Args:
-        data: numpy array with shape (n_samples, 2) containing indices and labels
-        sample_ratio: percentage of data to sample (default: 1.0, which keeps all data)
-        random_seed: random seed for reproducibility
-        
-    Returns:
-        sampled_data: numpy array with stratified sampled data
-    """
-    if sample_ratio >= 1.0:
-        return data
-    
-    # Set random seed for reproducibility
-    np.random.seed(random_seed)
-    original_sample_size = len(data)
-    
-    # Get class labels (second column)
-    labels = data[:, 1].astype(np.int32)
-    unique_labels = np.unique(labels)
-    
-    # Track class distribution before sampling
-    before_count = {label: np.sum(labels == label) for label in unique_labels}
-    print("Class distribution before sampling:", before_count)
-
-    # Calculate class ratio before sampling (assumes binary classification with 0 and 1)
-    if 0 in before_count and 1 in before_count:
-        print(f"Before sampling - Percentage of class 1: {before_count[1]/sum(before_count.values())*100:.2f}%")
-        print(f"Before sampling - Percentage of class 0: {before_count[0]/sum(before_count.values())*100:.2f}%")
-    
-    sampled_indices = []
-    
-    # Sample from each class separately to maintain distribution
-    for label in unique_labels:
-        # Get indices for this class
-        class_indices = np.where(labels == label)[0]
-        # Calculate how many samples to take from this class
-        n_samples = int(len(class_indices) * sample_ratio)
-        if n_samples == 0:
-            n_samples = 1  # Ensure at least one sample per class
-        # Sample indices from this class
-        class_sampled_indices = np.random.choice(class_indices, n_samples, replace=False)
-        # Add to our list of sampled indices
-        sampled_indices.extend(class_sampled_indices)
-    
-    # Convert to numpy array and shuffle
-    sampled_indices = np.array(sampled_indices)
-    np.random.shuffle(sampled_indices)
-    
-    # Apply sampling
-    sampled_data = data[sampled_indices]
-    
-    # Track class distribution after sampling
-    after_labels = sampled_data[:, 1].astype(np.int32)
-    after_count = {label: np.sum(after_labels == label) for label in unique_labels}
-    print("Class distribution after sampling:", after_count)
-
-    # Calculate class ratio after sampling (assumes binary classification with 0 and 1)
-    if 0 in after_count and 1 in after_count:
-        after_ratio = after_count[1] / (after_count[0] + after_count[1]) * 100
-        print(f"After sampling - Percentage of class 1: {after_ratio:.2f}%")
-        print(f"After sampling - Percentage of class 0: {100 - after_ratio:.2f}%")
-    
-    print(f'Original training data shape: {original_sample_size} samples')
-    print(f'Sampled training data shape: {sampled_data.shape[0]} samples')
-    
-    return sampled_data
-
-
 def train(args, pretrain_model, device):
     ### Load data
     print('--- LOADING TRAINING FILES ... ---')
-    xAll = np.load('./BMG/Pretrain_data/pretrain_bmgc_omics.npy')
-    yTr = np.load('./BMG/Pretrain_data/balanced_train.npy')
-    yTe = np.load('./BMG/Pretrain_data/balanced_test.npy')
+    xTr = np.load(os.path.join(args.data_path, 'pretrain_status_train_feature.npy'))
+    xTe = np.load(os.path.join(args.data_path, 'pretrain_status_test_feature.npy'))
+    yTr = np.load(os.path.join(args.data_path, 'pretrain_status_train_label.npy'))
+    yTe = np.load(os.path.join(args.data_path, 'pretrain_status_test_label.npy'))
     # Load the dictionary for node_index
-    omics_node_index_df = pd.read_csv('./BMG/Pretrain_data/omics_nodes_index.csv')
+    node_index_df = pd.read_csv(os.path.join(args.data_path, 'nodes_index.csv'))
     # Fetch the protein node in the column Type == Protein
-    protein_node_index_df = omics_node_index_df[omics_node_index_df['Type'] == 'Protein']
+    protein_node_index_df = node_index_df[node_index_df['Type'] == 'Protein']
     protein_node_index_list = protein_node_index_df['Index'].tolist()
     # Convert protein_node_index_list to torch tensor
     protein_node_index = torch.tensor(protein_node_index_list, dtype=torch.long).to(device)
 
-    # Sampling ratio of yTr for training with random seed for selecting the index
-    sample_ratio = args.train_sample_ratio if hasattr(args, 'train_sample_ratio') else 1.0
-    random_seed = args.training_sample_random_seed if hasattr(args, 'random_seed') else 42
+    # # Map yTr to 0-(number of unique values-1)
+    # unique_values = np.unique(yTr)
+    # print("Number of classes: ", len(unique_values))
+    # args.num_class = len(unique_values)
+    # value_to_index = {value: index for index, value in enumerate(unique_values)}
+    # yTr = np.vectorize(value_to_index.get)(yTr)
+    # yTr = yTr.reshape(-1, 1)  # Ensure yTr is a 2D array
+    # print(xTr.shape, yTr.shape)
+    # unique_values = np.unique(yTe)
+    # print("Number of classes: ", len(unique_values))
+    # args.num_class = len(unique_values)
+    # value_to_index = {value: index for index, value in enumerate(unique_values)}
+    # yTe = np.vectorize(value_to_index.get)(yTe)
+    # yTe = yTe.reshape(-1, 1)  # Ensure yTe is a 2D array
+    # print(xTe.shape, yTe.shape)
 
-    if sample_ratio < 1.0:
-        print(f'Stratified sampling {sample_ratio * 100}% of training data with random seed {random_seed}')
-        # Use the new stratified sampling function
-        yTr = stratified_sample_data(yTr, sample_ratio, random_seed)
-
-    # Use the first column as the indices and second column as the labels
-    yTr_index = yTr[:, 0].astype(np.int32).reshape(-1, 1)
-    yTr_label = yTr[:, 1].astype(np.int32).reshape(-1, 1)
-    yTe_index = yTe[:, 0].astype(np.int32).reshape(-1, 1)
-    yTe_label = yTe[:, 1].astype(np.int32).reshape(-1, 1)
-    yAll = np.concatenate((yTr_label, yTe_label), axis=0)
-    yAll_index = np.concatenate((yTr_index, yTe_index), axis=0)
-    # also convert yAll_index to int32
-    # Map yTr_label to 0-(number of unique values-1)
-    unique_values = np.unique(yTr_label)
+    # Map yTr to 0-(number of unique values-1)
+    unique_values = np.unique(yTr)
     print("Number of classes: ", len(unique_values))
     args.num_class = len(unique_values)
     value_to_index = {value: index for index, value in enumerate(unique_values)}
-    yTr_label = np.vectorize(value_to_index.get)(yTr_label)
-    print(xAll.shape, yTr_label.shape)
+    yTr = np.vectorize(value_to_index.get)(yTr)
+    yTr = yTr.reshape(-1, 1)  # Ensure yTr is a 2D array
+    print("Before upsampling - xTr shape:", xTr.shape, "yTr shape:", yTr.shape)
+
+    # Check class distribution before upsampling
+    unique_train, counts_train = np.unique(yTr, return_counts=True)
+    print("Training class distribution before upsampling:", dict(zip(unique_train, counts_train)))
+
+    # Upsample to balance classes 0 and 1
+    class_0_indices = np.where(yTr.flatten() == 0)[0]
+    class_1_indices = np.where(yTr.flatten() == 1)[0]
+
+    print(f"Original class distribution - Class 0: {len(class_0_indices)}, Class 1: {len(class_1_indices)}")
+
+    # Determine which class is minority and which is majority
+    if len(class_0_indices) < len(class_1_indices):
+        minority_class = 0
+        minority_indices = class_0_indices
+        majority_count = len(class_1_indices)
+        print(f"Upsampling class 0: {len(class_0_indices)} -> {majority_count} samples")
+    elif len(class_1_indices) < len(class_0_indices):
+        minority_class = 1
+        minority_indices = class_1_indices
+        majority_count = len(class_0_indices)
+        print(f"Upsampling class 1: {len(class_1_indices)} -> {majority_count} samples")
+    else:
+        minority_class = None
+        print("Classes are already balanced, no upsampling needed")
+
+    # Perform upsampling if needed
+    if minority_class is not None:
+        # Calculate how many additional samples we need for the minority class
+        n_additional = majority_count - len(minority_indices)
+        # Randomly sample with replacement from existing minority class samples
+        additional_indices = np.random.choice(minority_indices, size=n_additional, replace=True)
+        # Combine original indices with additional indices
+        upsampled_indices = np.concatenate([np.arange(len(yTr)), additional_indices])
+        # Shuffle the upsampled indices to randomize the order
+        np.random.shuffle(upsampled_indices)
+        # Apply upsampling to both features and labels
+        xTr = xTr[upsampled_indices]
+        yTr = yTr[upsampled_indices]
+        print("After upsampling - xTr shape:", xTr.shape, "yTr shape:", yTr.shape)
+        
+        # Check class distribution after upsampling
+        unique_train_after, counts_train_after = np.unique(yTr, return_counts=True)
+        print("Training class distribution after upsampling:", dict(zip(unique_train_after, counts_train_after)))
+
+    # Process test labels (MOVED OUTSIDE THE IF BLOCK)
+    unique_values = np.unique(yTe)
+    print("Number of classes in test: ", len(unique_values))
+    value_to_index = {value: index for index, value in enumerate(unique_values)}
+    yTe = np.vectorize(value_to_index.get)(yTe)
+    yTe = yTe.reshape(-1, 1)  # Ensure yTe is a 2D array
+    print("Test data - xTe shape:", xTe.shape, "yTe shape:", yTe.shape)
+
+    # Check test class distribution
+    unique_test, counts_test = np.unique(yTe, return_counts=True)
+    print("Test class distribution:", dict(zip(unique_test, counts_test)))
+
     # Load edge_index
-    all_edge_index = np.load('./BMG/Pretrain_data/edge_index.npy')
-    internal_edge_index = np.load('./BMG/Pretrain_data/internal_edge_index.npy')
-    ppi_edge_index = np.load('./BMG/Pretrain_data/ppi_edge_index.npy')
+    all_edge_index = np.load(os.path.join(args.data_path, 'edge_index.npy'))
+    internal_edge_index = np.load(os.path.join(args.data_path, 'internal_edge_index.npy'))
+    ppi_edge_index = np.load(os.path.join(args.data_path, 'ppi_edge_index.npy'))
     all_edge_index = torch.from_numpy(all_edge_index).long()
     internal_edge_index = torch.from_numpy(internal_edge_index).long()
     ppi_edge_index = torch.from_numpy(ppi_edge_index).long()
     # Load textual embeddings
     if args.train_text:
         # Use language model to embed the name and description
-        s_name_df = pd.read_csv('./BMG/Pretrain_data/bmgc_omics_name.csv')
-        s_desc_df = pd.read_csv('./BMG/Pretrain_data/bmgc_omics_desc.csv')
+        s_name_df = pd.read_csv(os.path.join(args.data_path, 'bmgc_omics_name.csv'))
+        s_desc_df = pd.read_csv(os.path.join(args.data_path, 'bmgc_omics_desc.csv'))
         name_sentence_list = s_name_df['Names_and_IDs'].tolist()
         name_sentence_list = [str(name) for name in name_sentence_list]
         desc_sentence_list = s_desc_df['Description'].tolist()
@@ -400,15 +386,15 @@ def train(args, pretrain_model, device):
         text_encoder.load_model()
         name_embeddings = text_encoder.generate_embeddings(name_sentence_list, batch_size=args.pretrain_text_batch_size, text_emb_dim=args.lm_emb_dim)
         print(f'Name Embeddings Shape: {name_embeddings.shape}')
-        text_encoder.save_embeddings(name_embeddings, './BMG/Pretrain_data/x_name_emb.npy')
+        text_encoder.save_embeddings(name_embeddings, os.path.join(args.data_path, 'x_name_emb.npy'))
         desc_embeddings = text_encoder.generate_embeddings(desc_sentence_list, batch_size=args.pretrain_text_batch_size, text_emb_dim=args.lm_emb_dim)
         print(f'Description Embeddings Shape: {desc_embeddings.shape}')
-        text_encoder.save_embeddings(desc_embeddings, './BMG/Pretrain_data/x_desc_emb.npy')
+        text_encoder.save_embeddings(desc_embeddings, os.path.join(args.data_path, 'x_desc_emb.npy'))
     else:
-        name_embeddings = np.load('./BMG/Pretrain_data/x_name_emb.npy').reshape(-1, args.lm_emb_dim)
+        name_embeddings = np.load(os.path.join(args.data_path, 'x_name_emb.npy')).reshape(-1, args.lm_emb_dim)
         name_embeddings = torch.from_numpy(name_embeddings)
         print(f'Name Embeddings Shape: {name_embeddings.shape}')
-        desc_embeddings = np.load('./BMG/Pretrain_data/x_desc_emb.npy').reshape(-1, args.lm_emb_dim)
+        desc_embeddings = np.load(os.path.join(args.data_path, 'x_desc_emb.npy')).reshape(-1, args.lm_emb_dim)
         desc_embeddings = torch.from_numpy(desc_embeddings)
         print(f'Description Embeddings Shape: {desc_embeddings.shape}')
     # load textual embeddings into torch tensor
@@ -418,14 +404,14 @@ def train(args, pretrain_model, device):
     ### Build Pretrain and Train Model
     pretrain_model = build_pretrain_model(args, device)
     num_feature = args.num_omic_feature
-    args.num_entity = xAll.shape[1]
+    args.num_entity = xTr.shape[1]
     # Train the model depends on the task
     model = build_model(args, device)
     model.train()
     model.reset_parameters()
 
-    num_entity = xAll.shape[1]
-    train_num_cell = yTr_label.shape[0]
+    num_entity = xTr.shape[1]
+    train_num_cell = yTr.shape[0]
     epoch_num = args.num_train_epoch
     train_batch_size = args.train_batch_size
 
@@ -434,7 +420,7 @@ def train(args, pretrain_model, device):
     dl_input_num = train_num_cell
     
     # Add learning rate schedule parameters
-    e1, e2, e3, e4 = 1, 1, 3, 5  # Example values, adjust as needed
+    e1, e2, e3, e4 = 3, 3, 2, 2  # Example values, adjust as needed
 
     epoch_loss_list = []
     epoch_f1_list = []
@@ -448,6 +434,9 @@ def train(args, pretrain_model, device):
     max_test_acc = 0
     max_test_f1 = 0
     max_test_acc_id = 0
+
+    # Initialize best_metrics before the training loop (add this before the for loop)
+    best_metrics = {}
 
     # Clean result previous epoch_i_pred files
     folder_name = 'epoch_' + str(epoch_num)
@@ -477,7 +466,7 @@ def train(args, pretrain_model, device):
             # Update learning rate based on current iteration
             updated_lr = learning_rate_schedule(args, dl_input_num, iteration_num, e1, e2, e3, e4)
             iteration_num += 1
-            geo_train_datalist = read_index_batch(index, upper_index, xAll, yTr_index, yTr_label, num_feature, num_entity, all_edge_index, internal_edge_index, ppi_edge_index)
+            geo_train_datalist = read_batch(index, upper_index, xTr, yTr, num_feature, num_entity, all_edge_index, internal_edge_index, ppi_edge_index)
             train_dataset_loader = GeoGraphLoader.load_graph(geo_train_datalist, args.train_batch_size, args.train_num_workers)
             current_cell_num = upper_index - index # current batch size
             optimizer = torch.optim.Adam(filter(lambda p : p.requires_grad, model.parameters()), lr=updated_lr, eps=args.train_eps, weight_decay=args.train_weight_decay)
@@ -494,7 +483,7 @@ def train(args, pretrain_model, device):
         epoch_ypred = np.delete(epoch_ypred, 0, axis = 0)
         # print('ITERATION NUMBER UNTIL NOW: ' + str(iteration_num))
         # Preserve acc corr for every epoch
-        score_lists = list(yTr_label)
+        score_lists = list(yTr)
         score_list = [item for elem in score_lists for item in elem]
         epoch_ypred_lists = list(epoch_ypred)
         epoch_ypred_list = [item for elem in epoch_ypred_lists for item in elem]
@@ -525,7 +514,7 @@ def train(args, pretrain_model, device):
         print(epoch_loss_list)
 
         # # # Test model on test dataset
-        test_acc, test_f1, test_loss, tmp_test_input_df = test(args, pretrain_model, model, xAll, yTe_index, yTe_label, all_edge_index, internal_edge_index, ppi_edge_index, device, i)
+        test_acc, test_f1, test_loss, tmp_test_input_df = test(args, pretrain_model, model, xTe, yTe, all_edge_index, internal_edge_index, ppi_edge_index, device, i)
         test_acc_list.append(test_acc)
         test_f1_list.append(test_f1)
         test_loss_list.append(test_loss)
@@ -538,20 +527,70 @@ def train(args, pretrain_model, device):
         print(test_loss_list)
         # # Save each epoch model
         # torch.save(model.state_dict(), path + '/epoch_model_'+ str(i) +'.pt')
-        # SAVE BEST TEST MODEL
-        # if test_acc >= max_test_acc and accuracy >= max_train_acc:
-        if test_f1 >= max_test_f1 and accuracy >= max_train_acc:
-            print('Saving best model...')
+        # SAVE BEST MODEL using improved strategy
+        # Calculate balanced criteria
+        train_acc, train_f1, train_loss = accuracy, f1, epoch_loss
+        test_acc_val, test_f1_val, test_loss_val = test_acc, test_f1, test_loss
+        
+        # Avoid overfitting: don't save if training accuracy too much higher than test
+        overfitting_threshold = 0.2  # Max 20% gap between train and test accuracy
+        overfitting_detected = train_acc - test_acc_val > overfitting_threshold
+        
+        # Don't save models with very poor training performance
+        poor_training = train_acc < 0.7
+        
+        # Composite score: weighted average of test metrics
+        current_score = 0.6 * test_f1_val + 0.4 * test_acc_val
+        best_score = best_metrics.get('composite_score', 0.0)
+        
+        if not overfitting_detected and not poor_training and current_score > best_score:
+            print('Saving best model with improved composite score...')
             max_train_acc = accuracy 
             max_test_acc = test_acc
             max_train_f1 = f1
             max_test_f1 = test_f1
             max_test_acc_id = i
-            # torch.save(model.state_dict(), path + '/best_train_model'+ str(i) +'.pt')
+            
+            # Update best metrics
+            best_metrics['composite_score'] = current_score
+            best_metrics['epoch'] = i
+            best_metrics['train_acc'] = train_acc
+            best_metrics['test_acc'] = test_acc_val
+            best_metrics['train_f1'] = train_f1
+            best_metrics['test_f1'] = test_f1_val
+            
+            # Save both pretrain_model and model together
+            combined_state_dict = {
+                'pretrain_model': pretrain_model.state_dict(),
+                'downstream_model': model.state_dict(),
+                'epoch': i,
+                'max_train_acc': max_train_acc,
+                'max_test_acc': max_test_acc,
+                'max_train_f1': max_train_f1,
+                'max_test_f1': max_test_f1,
+                'composite_score': current_score,
+                'args': vars(args)  # Save hyperparameters for reproducibility
+            }
+            torch.save(combined_state_dict, path + '/best_combined_model.pt')
+            
+            # Keep the original individual model saving for backward compatibility
             torch.save(model.state_dict(), path + '/best_train_model.pt')
+            
             tmp_training_input_df.to_csv(path + '/BestTrainingPred.txt', index=False, header=True)
             tmp_test_input_df.to_csv(path + '/BestTestPred.txt', index=False, header=True)
             write_best_model_info(path, max_test_acc_id, epoch_loss_list, epoch_acc_list, epoch_f1_list, test_loss_list, test_acc_list, test_f1_list)
+            
+            print(f"New best model saved at epoch {i} with composite score: {current_score:.4f}")
+            print(f"  - Train Acc: {train_acc:.3f}, Test Acc: {test_acc_val:.3f}")
+            print(f"  - Train F1: {train_f1:.3f}, Test F1: {test_f1_val:.3f}")
+        
+        elif overfitting_detected:
+            print(f"Epoch {i}: Potential overfitting detected (train_acc: {train_acc:.3f}, test_acc: {test_acc_val:.3f})")
+        elif poor_training:
+            print(f"Epoch {i}: Training accuracy too low ({train_acc:.3f}), skipping save")
+        else:
+            print(f"Epoch {i}: Current composite score ({current_score:.4f}) not better than best ({best_score:.4f})")
+        
         print('\n-------------BEST TEST ACCURACY MODEL ID INFO:' + str(max_test_acc_id) + '-------------')
         print('--- TRAIN ---')
         print('BEST MODEL TRAIN LOSS: ', epoch_loss_list[max_test_acc_id - 1])
@@ -564,7 +603,7 @@ def train(args, pretrain_model, device):
 
 
 
-def test(args, pretrain_model, model, xAll, yTe_index, yTe_label, all_edge_index, internal_edge_index, ppi_edge_index, device, i):
+def test(args, pretrain_model, model, xTe, yTe, all_edge_index, internal_edge_index, ppi_edge_index, device, i):
     # Set deterministic behavior
     torch.manual_seed(42)
     np.random.seed(42)
@@ -578,24 +617,24 @@ def test(args, pretrain_model, model, xAll, yTe_index, yTe_label, all_edge_index
     print('-------------------------- TEST START --------------------------')
     
     print('--- LOADING TESTING FILES ... ---')
-    print('xAll: ', xAll.shape)
-    print('yTe_label: ', yTe_label.shape)
-    test_num_cell = yTe_label.shape[0]
-    num_entity = xAll.shape[1]
+    print('xTe: ', xTe.shape)
+    print('yTe: ', yTe.shape)
+    test_num_cell = yTe.shape[0]
+    num_entity = xTe.shape[1]
     num_feature = args.num_omic_feature
     # Load the dictionary for node_index
-    omics_node_index_df = pd.read_csv('./BMG/Pretrain_data/omics_nodes_index.csv')
+    node_index_df = pd.read_csv(os.path.join(args.data_path, 'nodes_index.csv'))
     # Fetch the protein node in the column Type == Protein
-    protein_node_index_df = omics_node_index_df[omics_node_index_df['Type'] == 'Protein']
+    protein_node_index_df = node_index_df[node_index_df['Type'] == 'Protein']
     protein_node_index_list = protein_node_index_df['Index'].tolist()
     # Convert protein_node_index_list to torch tensor
     protein_node_index = torch.tensor(protein_node_index_list, dtype=torch.long).to(device)
     
     # load textual embeddings into torch tensor
-    name_embeddings = np.load('./BMG/Pretrain_data/x_name_emb.npy').reshape(-1, args.lm_emb_dim)
+    name_embeddings = np.load(os.path.join(args.data_path, 'x_name_emb.npy')).reshape(-1, args.lm_emb_dim)
     name_embeddings = torch.from_numpy(name_embeddings)
     print(f'Name Embeddings Shape: {name_embeddings.shape}')
-    desc_embeddings = np.load('./BMG/Pretrain_data/x_desc_emb.npy').reshape(-1, args.lm_emb_dim)
+    desc_embeddings = np.load(os.path.join(args.data_path, 'x_desc_emb.npy')).reshape(-1, args.lm_emb_dim)
     desc_embeddings = torch.from_numpy(desc_embeddings)
     print(f'Description Embeddings Shape: {desc_embeddings.shape}')
     name_embeddings = name_embeddings.float().to(device)
@@ -612,7 +651,7 @@ def test(args, pretrain_model, model, xAll, yTe_index, yTe_label, all_edge_index
             upper_index = index + test_batch_size
         else:
             upper_index = test_num_cell
-        geo_datalist = read_index_batch(index, upper_index, xAll, yTe_index, yTe_label, num_feature, num_entity, all_edge_index, internal_edge_index, ppi_edge_index)
+        geo_datalist = read_batch(index, upper_index, xTe, yTe, num_feature, num_entity, all_edge_index, internal_edge_index, ppi_edge_index)
         test_dataset_loader = GeoGraphLoader.load_graph(geo_datalist, args.train_batch_size, args.train_num_workers)
         print('TEST MODEL...')
         current_cell_num = upper_index - index # current batch size
@@ -629,10 +668,9 @@ def test(args, pretrain_model, model, xAll, yTe_index, yTe_label, all_edge_index
     all_ypred = np.delete(all_ypred, 0, axis=0)
     all_ypred_lists = list(all_ypred)
     all_ypred_list = [item for elem in all_ypred_lists for item in elem]
-    score_lists = list(yTe_label)
+    score_lists = list(yTe)
     score_list = [item for elem in score_lists for item in elem]
     test_dict = {'label': score_list, 'prediction': all_ypred_list}
-    # import pdb; pdb.set_trace()
     tmp_test_input_df = pd.DataFrame(test_dict)
     # Calculating metrics
     accuracy = accuracy_score(tmp_test_input_df['label'], tmp_test_input_df['prediction'])
@@ -649,6 +687,57 @@ def test(args, pretrain_model, model, xAll, yTe_index, yTe_label, all_edge_index
     test_acc = accuracy
     test_f1 = f1
     return test_acc, test_f1, test_loss, tmp_test_input_df
+
+
+def load_combined_model(checkpoint_path, args, device):
+    """
+    Load both pretrain_model and downstream model from a combined checkpoint.
+    
+    Args:
+        checkpoint_path (str): Path to the combined model checkpoint
+        args: Arguments object with model parameters
+        device: Device to load models on
+    
+    Returns:
+        tuple: (pretrain_model, downstream_model, checkpoint_info)
+    """
+    checkpoint = torch.load(checkpoint_path, map_location=device)
+    
+    # Build models
+    pretrain_model = build_pretrain_model(args, device)
+    downstream_model = build_model(args, device)
+    
+    # Load state dictionaries
+    pretrain_model.load_state_dict(checkpoint['pretrain_model'])
+    downstream_model.load_state_dict(checkpoint['downstream_model'])
+    
+    # Set to evaluation mode
+    pretrain_model.eval()
+    downstream_model.eval()
+    
+    # Extract additional info
+    checkpoint_info = {
+        'epoch': checkpoint.get('epoch', None),
+        'max_train_acc': checkpoint.get('max_train_acc', None),
+        'max_test_acc': checkpoint.get('max_test_acc', None),
+        'max_train_f1': checkpoint.get('max_train_f1', None),
+        'max_test_f1': checkpoint.get('max_test_f1', None),
+        'saved_args': checkpoint.get('args', None)
+    }
+    
+    return pretrain_model, downstream_model, checkpoint_info
+
+
+# Example usage for loading the combined model
+def load_and_use_combined_model(checkpoint_path, args, device):
+    """Example of how to load and use the combined model"""
+    pretrain_model, downstream_model, info = load_combined_model(checkpoint_path, args, device)
+    
+    print(f"Loaded model from epoch {info['epoch']}")
+    print(f"Best test F1: {info['max_test_f1']}")
+    print(f"Best test accuracy: {info['max_test_acc']}")
+    
+    return pretrain_model, downstream_model
 
 
 def arg_parse():
@@ -678,30 +767,28 @@ def arg_parse():
     parser.add_argument('--l2_normalize', action='store_true', help='Whether to use l2 normalize output embedding. (default: False)')
     parser.add_argument('--graphclas_weight_decay', type=float, default=1e-3, help='weight_decay for node classification training. (default: 1e-3)')
 
-    parser.add_argument('--save_path', nargs='?', default='./Checkpoints/pretrained_models_gat/pretrained_motasg_foundation.pt', help='save path for model. (default: pretrained_motasg_foundation.pt)')
+    parser.add_argument('--save_path', nargs='?', default='./checkpoints/pretrained_models_gat/pretrained_plain_foundation.pt', help='save path for model. (default: pretrained_plain_foundation.pt)')
     parser.add_argument('--device', type=int, default=0)
 
     # downstream task parameters
-    parser.add_argument('--train_sample_ratio', type=float, default=0.2, help='Sampling ratio of training data. (default: 1.0)')
-    parser.add_argument('--training_sample_random_seed', type=int, default=2025, help='Random seed for sampling training data. (default: 42)')
-
+    parser.add_argument('--data_path', nargs='?', default='./data/pretrain_status_data', help='Path to the pretrain status data. (default: ./data/pretrain_status_data)')
     parser.add_argument('--text_lm_model_path', nargs='?', default='dmis-lab/biobert-v1.1', help='Path to the pretrained language model. (default: dmis-lab/biobert-v1.1)')
     parser.add_argument('--train_text', default=False, help='Whether to train the text encoder. (default: False)')
     parser.add_argument('--task', nargs='?', default='class', help='Task for training downstream tasks. (default: class)')
     parser.add_argument('--name', nargs='?', default='DepMap', help='Name for dataset.')
     parser.add_argument('--num_class', type=int, default=2, help='Number of classes for classification. (default: 2)')
 
-    parser.add_argument('--train_lr', type=float, default=0.0002, help='Learning rate for training. (default: 0.0002)')
-    parser.add_argument('--train_lr2', type=float, default=0.0001, help='Learning rate for training. (default: 0.0001)')
-    parser.add_argument('--train_lr3', type=float, default=0.000075, help='Learning rate for training. (default: 0.000075)')
-    parser.add_argument('--train_lr4', type=float, default=0.00005, help='Learning rate for training. (default: 0.00005)')
-    parser.add_argument('--train_lr5', type=float, default=0.00001, help='Learning rate for training. (default: 0.00001)')
+    parser.add_argument('--train_lr', type=float, default=0.001, help='Learning rate for training. (default: 0.001)')
+    parser.add_argument('--train_lr2', type=float, default=0.00075, help='Learning rate for training. (default: 0.00075)')
+    parser.add_argument('--train_lr3', type=float, default=0.0005, help='Learning rate for training. (default: 0.0005)')
+    parser.add_argument('--train_lr4', type=float, default=0.00025, help='Learning rate for training. (default: 0.00025)')
+    parser.add_argument('--train_lr5', type=float, default=0.0001, help='Learning rate for training. (default: 0.0001)')
     parser.add_argument('--train_eps', type=float, default=1e-7, help='Epsilon for Adam optimizer. (default: 1e-7)')
     parser.add_argument('--train_weight_decay', type=float, default=1e-15, help='Weight decay for Adam optimizer. (default: 1e-15)')
     parser.add_argument('--train_encoder_dropout', type=float, default=0.1, help='Dropout probability of encoder. (default: 0.1)')
 
     parser.add_argument('--num_train_epoch', type=int, default=50, help='Number of training epochs. (default: 50)')
-    parser.add_argument('--train_batch_size', type=int, default=4, help='Batch size for training. (default: 16)')
+    parser.add_argument('--train_batch_size', type=int, default=2, help='Batch size for training. (default: 2)')
     parser.add_argument('--train_num_workers', type=int, default=0, help='Number of workers to load data.')
 
     parser.add_argument('--train_layer', nargs='?', default='gat', help='GNN layer, (default: gcn)')
@@ -753,22 +840,22 @@ if __name__ == "__main__":
         # Train the model
         train(args, pretrain_model, device)
     
-    ### Test the model
+    # ### Test the model using combined checkpoint
     # print('--- LOADING TEST FILES ... ---')
-    # xAll = np.load('./BMG/Pretrain_data/pretrain_bmgc_omics.npy')
-    # yTe = np.load('./BMG/Pretrain_data/balanced_test.npy')
-    # print(xAll.shape, yTe.shape)
-    # # Use the first column as the indices and second column as the labels
-    # yTe_index = yTe[:, 0].astype(np.int32).reshape(-1, 1)
-    # yTe_label = yTe[:, 1].astype(np.int32).reshape(-1, 1)
-    # model = build_model(args, device)
-    # model.load_state_dict(torch.load('./Results/DepMap/MOTASG-Class/epoch_10_best/epoch_model_3.pt'))
-    # model.eval()
+    # xTe = np.load(os.path.join(args.data_path, 'pretrain_status_test_feature.npy'))
+    # yTe = np.load(os.path.join(args.data_path, 'pretrain_status_test_label.npy'))
+    # print(xTe.shape, yTe.shape)
+    # # Load both pretrain_model and downstream model from combined checkpoint
+    # combined_checkpoint_path = './MOTASG_Results/DepMap/MOTASG_Class_gat_gat/epoch_50/best_combined_model.pt'
+    # pretrain_model, model, checkpoint_info = load_combined_model(combined_checkpoint_path, args, device)
+    # print(f"Loaded combined model from epoch {checkpoint_info['epoch']}")
+    # print(f"Model test F1: {checkpoint_info['max_test_f1']}")
+    # print(f"Model test accuracy: {checkpoint_info['max_test_acc']}")
     # # Load edge_index
-    # all_edge_index = np.load('./BMG/Pretrain_data/edge_index.npy')
-    # internal_edge_index = np.load('./BMG/Pretrain_data/internal_edge_index.npy')
-    # ppi_edge_index = np.load('./BMG/Pretrain_data/ppi_edge_index.npy')
+    # all_edge_index = np.load(os.path.join(args.data_path, 'edge_index.npy'))
+    # internal_edge_index = np.load(os.path.join(args.data_path, 'internal_edge_index.npy'))
+    # ppi_edge_index = np.load(os.path.join(args.data_path, 'ppi_edge_index.npy'))
     # all_edge_index = torch.from_numpy(all_edge_index).long()
     # internal_edge_index = torch.from_numpy(internal_edge_index).long()
     # ppi_edge_index = torch.from_numpy(ppi_edge_index).long()
-    # test(args, pretrain_model, model, xAll, yTe_index, yTe_label, all_edge_index, internal_edge_index, ppi_edge_index, device, i=3)
+    # test(args, pretrain_model, model, xTe, yTe, all_edge_index, internal_edge_index, ppi_edge_index, device, i=0)

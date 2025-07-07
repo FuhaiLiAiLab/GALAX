@@ -13,7 +13,7 @@ from MOTASG_Foundation.model import MOTASG_Foundation, DegreeDecoder, EdgeDecode
 from MOTASG_Foundation.mask import MaskEdge
 
 # custom dataloader
-from GeoDataLoader.read_geograph import read_batch
+from GeoDataLoader.read_geograph import read_pretrain_batch
 from GeoDataLoader.geograph_sampler import GeoGraphLoader
 
 from MOTASG_Foundation.lm_model import TextEncoder
@@ -55,17 +55,12 @@ def pretrain_foundation(args, device):
     os.makedirs(os.path.dirname(args.save_path), exist_ok=True)
     # Load data
     print('--- LOADING TRAINING FILES ... ---')
-    xAll = np.load('./BMG/Pretrain_data/pretrain_bmgc_omics.npy')
-    yTr = np.load('./BMG/Pretrain_data/balanced_train.npy')
-    yTe = np.load('./BMG/Pretrain_data/balanced_test.npy')
-    yAll = np.concatenate((yTr, yTe), axis=0)
-    # only keep the last column of yAll
-    yAll = yAll[:, -1].reshape(-1, 1)
-    all_edge_index = np.load('./BMG/Pretrain_data/edge_index.npy')
-    internal_edge_index = np.load('./BMG/Pretrain_data/internal_edge_index.npy')
-    ppi_edge_index = np.load('./BMG/Pretrain_data/ppi_edge_index.npy')
+    xAll = np.load(os.path.join(args.data_path, 'pretrain_plain_feature.npy'))
+    all_edge_index = np.load(os.path.join(args.data_path, 'edge_index.npy'))
+    internal_edge_index = np.load(os.path.join(args.data_path, 'internal_edge_index.npy'))
+    ppi_edge_index = np.load(os.path.join(args.data_path, 'ppi_edge_index.npy'))
 
-    # shffule the xAll (since this is only the pretrain omics, yAll is not used for shuffling)
+    # shuffle the xAll (since this is only the pretrain omics)
     np.random.seed(args.sf_seed)  # Set fixed seed for reproducibility
     shuffle_idx = np.random.permutation(xAll.shape[0])
     xAll = xAll[shuffle_idx]
@@ -87,8 +82,8 @@ def pretrain_foundation(args, device):
 
     if args.train_text:
         # Use language model to embed the name and description
-        s_name_df = pd.read_csv('./BMG/Pretrain_data/bmgc_omics_name.csv')
-        s_desc_df = pd.read_csv('./BMG/Pretrain_data/bmgc_omics_desc.csv')
+        s_name_df = pd.read_csv(os.path.join(args.data_path, 'bmgc_name.csv'))
+        s_desc_df = pd.read_csv(os.path.join(args.data_path, 'bmgc_desc.csv'))
         name_sentence_list = s_name_df['Names_and_IDs'].tolist()
         name_sentence_list = [str(name) for name in name_sentence_list]
         desc_sentence_list = s_desc_df['Description'].tolist()
@@ -97,15 +92,15 @@ def pretrain_foundation(args, device):
         text_encoder.load_model()
         name_embeddings = text_encoder.generate_embeddings(name_sentence_list, batch_size=args.pretrain_text_batch_size, text_emb_dim=args.lm_emb_dim)
         print(f'Name Embeddings Shape: {name_embeddings.shape}')
-        text_encoder.save_embeddings(name_embeddings, './BMG/Pretrain_data/x_name_emb.npy')
+        text_encoder.save_embeddings(name_embeddings, os.path.join(args.data_path, 'x_name_emb.npy'))
         desc_embeddings = text_encoder.generate_embeddings(desc_sentence_list, batch_size=args.pretrain_text_batch_size, text_emb_dim=args.lm_emb_dim)
         print(f'Description Embeddings Shape: {desc_embeddings.shape}')
-        text_encoder.save_embeddings(desc_embeddings, './BMG/Pretrain_data/x_desc_emb.npy')
+        text_encoder.save_embeddings(desc_embeddings, os.path.join(args.data_path, 'x_desc_emb.npy'))
     else:
-        name_embeddings = np.load('./BMG/Pretrain_data/x_name_emb.npy').reshape(-1, args.lm_emb_dim)
+        name_embeddings = np.load(os.path.join(args.data_path, 'x_name_emb.npy')).reshape(-1, args.lm_emb_dim)
         name_embeddings = torch.from_numpy(name_embeddings)
         print(f'Name Embeddings Shape: {name_embeddings.shape}')
-        desc_embeddings = np.load('./BMG/Pretrain_data/x_desc_emb.npy').reshape(-1, args.lm_emb_dim)
+        desc_embeddings = np.load(os.path.join(args.data_path, 'x_desc_emb.npy')).reshape(-1, args.lm_emb_dim)
         desc_embeddings = torch.from_numpy(desc_embeddings)
         print(f'Description Embeddings Shape: {desc_embeddings.shape}')
 
@@ -130,7 +125,7 @@ def pretrain_foundation(args, device):
         else:
             upper_index = num_cell
         current_cell_num = upper_index - index
-        geo_datalist = read_batch(index, upper_index, xAll, yAll, num_feature, num_entity, all_edge_index, internal_edge_index, ppi_edge_index)
+        geo_datalist = read_pretrain_batch(index, upper_index, xAll, num_feature, num_entity, all_edge_index, internal_edge_index, ppi_edge_index)
         dataset_loader = GeoGraphLoader.load_graph(geo_datalist, args.pretrain_batch_size, args.pretrain_num_workers) # read by batch size
 
         for batch_idx, data in enumerate(dataset_loader):
@@ -229,10 +224,11 @@ def arg_parse():
     parser.add_argument('--pretrain_num_workers', dest = 'pretrain_num_workers', type = int, default=0, help = 'Number of workers to load data.')
 
     parser.add_argument('--start', nargs='?', default='node', help='Which Type to sample starting nodes for random walks, (default: node)')
-    parser.add_argument('--p', type=float, default=0.0001, help='Mask ratio for MaskEdge')
+    parser.add_argument('--p', type=float, default=0.00005, help='Mask ratio for MaskEdge')
 
     parser.add_argument('--bn', action='store_true', help='Whether to use batch normalization for GNN encoder. (default: False)')
-    parser.add_argument('--save_path', nargs='?', default='./Checkpoints/pretrained_models_gat/pretrained_motasg_foundation.pt', help='save path for model. (default: pretrained_motasg_foundation.pt)')
+    parser.add_argument('--data_path', nargs='?', default='./data/pretrain_plain_data', help='Path to the pretrain data. (default: .data/pretrain_plain_data)')
+    parser.add_argument('--save_path', nargs='?', default='./checkpoints/pretrained_models_gat/pretrained_plain_foundation.pt', help='save path for model. (default: pretrained_plain_foundation.pt)')
     parser.add_argument('--device', type=int, default=0)
 
     return parser.parse_args()
@@ -250,4 +246,3 @@ if __name__ == "__main__":
         device = f'cuda:{args.device}' if torch.cuda.is_available() else 'cpu'
     # Pretrain model
     pretrain_model = pretrain_foundation(args, device)
-    

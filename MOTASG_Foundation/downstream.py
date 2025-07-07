@@ -636,44 +636,82 @@ class TransformerConv(MessagePassing):
         """
         H, C = self.heads, self.out_channels
 
+        res: Optional[Tensor] = None
+
         if isinstance(x, Tensor):
-            x = (x, x)
+            assert x.dim() == 2
 
-        query = self.lin_query(x[1]).view(-1, H, C)
-        key = self.lin_key(x[0]).view(-1, H, C)
-        value = self.lin_value(x[0]).view(-1, H, C)
+            if self.res is not None:
+                res = self.res(x)
 
-        # propagate_type: (query: Tensor, key:Tensor, value: Tensor,
-        #                  edge_attr: OptTensor)
-        out = self.propagate(edge_index, query=query, key=key, value=value,
-                             edge_attr=edge_attr)
+            x_l = self.lin_l(x).view(-1, H, C)
+            if self.share_weights:
+                x_r = x_l
+            else:
+                x_r = self.lin_r(x).view(-1, H, C)
+        else:
+            x_l, x_r = x[0], x[1]
+            assert x[0].dim() == 2
 
-        alpha = self._alpha
-        self._alpha = None
+            if x_r is not None and self.res is not None:
+                res = self.res(x_r)
+
+            x_l = self.lin_l(x_l).view(-1, H, C)
+            if x_r is not None:
+                x_r = self.lin_r(x_r).view(-1, H, C)
+
+        assert x_l is not None
+        assert x_r is not None
+
+        if self.add_self_loops:
+            if isinstance(edge_index, Tensor):
+                num_nodes = x_l.size(0)
+                if x_r is not None:
+                    num_nodes = min(num_nodes, x_r.size(0))
+                edge_index, edge_attr = remove_self_loops(
+                    edge_index, edge_attr)
+                edge_index, edge_attr = add_self_loops(
+                    edge_index, edge_attr, fill_value=self.fill_value,
+                    num_nodes=num_nodes)
+            elif isinstance(edge_index, SparseTensor):
+                if self.edge_dim is None:
+                    edge_index = torch_sparse.set_diag(edge_index)
+                else:
+                    raise NotImplementedError(
+                        "The usage of 'edge_attr' and 'add_self_loops' "
+                        "simultaneously is currently not yet supported for "
+                        "'edge_index' in a 'SparseTensor' form")
+
+        # edge_updater_type: (x: PairTensor, edge_attr: OptTensor)
+        alpha = self.edge_updater(edge_index, x=(x_l, x_r),
+                                  edge_attr=edge_attr)
+
+        # propagate_type: (x: PairTensor, alpha: Tensor)
+        out = self.propagate(edge_index, x=(x_l, x_r), alpha=alpha)
 
         if self.concat:
             out = out.view(-1, self.heads * self.out_channels)
         else:
             out = out.mean(dim=1)
 
-        if self.root_weight:
-            x_r = self.lin_skip(x[1])
-            if self.lin_beta is not None:
-                beta = self.lin_beta(torch.cat([out, x_r, out - x_r], dim=-1))
-                beta = beta.sigmoid()
-                out = beta * x_r + (1 - beta) * out
-            else:
-                out = out + x_r
+        if res is not None:
+            out = out + res
+
+        if self.bias is not None:
+            out = out + self.bias
 
         if isinstance(return_attention_weights, bool):
-            assert alpha is not None
             if isinstance(edge_index, Tensor):
-                return out, (edge_index, alpha)
+                if is_torch_sparse_tensor(edge_index):
+                    # TODO TorchScript requires to return a tuple
+                    adj = set_sparse_value(edge_index, alpha)
+                    return out, (adj, alpha)
+                else:
+                    return out, (edge_index, alpha)
             elif isinstance(edge_index, SparseTensor):
                 return out, edge_index.set_value(alpha, layout='coo')
         else:
             return out
-
 
     def message(self, query_i: Tensor, key_j: Tensor, value_j: Tensor,
                 edge_attr: OptTensor, index: Tensor, ptr: OptTensor,
@@ -902,12 +940,15 @@ class MOTASG_Class(nn.Module):
         # Linear representation
         self.lin_transform = nn.Linear(graph_output_dim, 1)
         self.linear_repr = nn.Sequential(
-            nn.Linear(num_entity, 256),
+            nn.Linear(num_entity, 512),
             nn.ReLU(),
-            nn.Dropout(0.1),
+            nn.Dropout(0.3),
+            nn.Linear(512, 256),
+            nn.ReLU(),
+            nn.Dropout(0.3),
             nn.Linear(256, 64),
             nn.ReLU(),
-            nn.Dropout(0.1),
+            nn.Dropout(0.3),
             nn.Linear(64, linear_input_dim)
         )
 
@@ -1011,27 +1052,87 @@ class MOTASG_Class(nn.Module):
         return output, pred
     
     def loss(self, output, label):
-        # Option 1: Use weight vector to balance the loss
-        num_class = self.num_class
-        weight_vector = torch.zeros([num_class]).to(device='cuda')
+        # Focal Loss - Good for handling hard/easy examples
+        gamma = 2.0   # Focusing parameter
+        # Convert labels and calculate cross entropy
         label = label.long()
-        for i in range(num_class):
-            n_samplei = torch.sum(label == i)
-            if n_samplei == 0:
-                weight_vector[i] = 0
-            else:
-                weight_vector[i] = len(label) / (n_samplei)
-        weight_vector[0] = 2.0 * weight_vector[0]
-        # Calculate the loss
-        output = torch.log_softmax(output, dim=-1)
-        loss = F.nll_loss(output, label, weight_vector)
+        ce_loss = F.cross_entropy(output, label, reduction='none')
+        # Calculate pt (probability of true class)
+        pt = torch.exp(-ce_loss)
+        # Apply focal loss formula: -(1-pt)^gamma * log(pt)
+        focal_loss = (1 - pt) ** gamma * ce_loss
+        return focal_loss.mean()
 
-        # # Option 2: Use weight vector to balance the loss
-        # output = torch.log_softmax(output, dim=-1)
-        # # Calculate the loss
+        # # Option 2: Class-Balanced Focal Loss
+        # num_class = self.num_class
+        # beta = 0.9999  # Re-weighting hyperparameter
+        # gamma = 2.0    # Focusing parameter
+        # 
         # label = label.long()
-        # loss = F.nll_loss(output, label)
-        return loss
+        # 
+        # # Calculate effective number of samples
+        # samples_per_class = torch.bincount(label, minlength=num_class).float()
+        # effective_num = 1.0 - torch.pow(beta, samples_per_class)
+        # weights = (1.0 - beta) / effective_num
+        # weights = weights / weights.sum() * num_class
+        # 
+        # # Apply focal loss with class balancing
+        # ce_loss = F.cross_entropy(output, label, reduction='none')
+        # pt = torch.exp(-ce_loss)
+        # 
+        # # Get weights for each sample
+        # sample_weights = weights[label]
+        # focal_loss = sample_weights * (1 - pt) ** gamma * ce_loss
+        # 
+        # return focal_loss.mean()
+
+        # # Option 3: Improved Weighted Cross-Entropy with better balancing
+        # num_class = self.num_class
+        # label = label.long()
+        # 
+        # # Calculate class frequencies
+        # class_counts = torch.bincount(label, minlength=num_class).float()
+        # # Avoid division by zero
+        # class_counts = torch.clamp(class_counts, min=1.0)
+        # 
+        # # Use inverse frequency weighting with smoothing
+        # total_samples = len(label)
+        # weight_vector = total_samples / (num_class * class_counts)
+        # 
+        # # Apply stronger penalty for minority class (class 0)
+        # if num_class == 2:
+        #     weight_vector[0] = weight_vector[0] * 5.0  # Increase penalty for class 0
+        # 
+        # # Normalize weights
+        # weight_vector = weight_vector / weight_vector.sum() * num_class
+        # 
+        # return F.cross_entropy(output, label, weight=weight_vector)
+
+        # # Option 4: Label Smoothing + Weighted Loss
+        # num_class = self.num_class
+        # label = label.long()
+        # smoothing = 0.1
+        # 
+        # # Calculate class weights
+        # class_counts = torch.bincount(label, minlength=num_class).float()
+        # class_counts = torch.clamp(class_counts, min=1.0)
+        # weight_vector = len(label) / (num_class * class_counts)
+        # weight_vector[0] = weight_vector[0] * 3.0  # Extra weight for minority class
+        # 
+        # # Apply label smoothing
+        # confidence = 1.0 - smoothing
+        # smooth_label = torch.full((len(label), num_class), smoothing / (num_class - 1)).to(label.device)
+        # smooth_label.scatter_(1, label.unsqueeze(1), confidence)
+        # 
+        # # Calculate weighted loss with label smoothing
+        # log_probs = F.log_softmax(output, dim=-1)
+        # loss = -torch.sum(smooth_label * log_probs, dim=1)
+        # 
+        # # Apply class weights
+        # sample_weights = weight_vector[label]
+        # weighted_loss = loss * sample_weights
+        # 
+        # return weighted_loss.mean()
     
 
 class MOTASG_Reg(nn.Module):
@@ -1080,12 +1181,15 @@ class MOTASG_Reg(nn.Module):
         # Linear representation
         self.lin_transform = nn.Linear(graph_output_dim, 1)
         self.linear_repr = nn.Sequential(
-            nn.Linear(num_entity, 256),
+            nn.Linear(num_entity, 512),
             nn.ReLU(),
-            nn.Dropout(0.1),
+            nn.Dropout(0.3),
+            nn.Linear(512, 256),
+            nn.ReLU(),
+            nn.Dropout(0.3),
             nn.Linear(256, 64),
             nn.ReLU(),
-            nn.Dropout(0.1),
+            nn.Dropout(0.3),
             nn.Linear(64, linear_input_dim)
         )
 

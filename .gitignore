@@ -20,3 +20,7 @@
 /data/TargetQA/*
 /data/DrugScreen/*
 /data/DrugQA/*
+
+# model checkpoints
+/checkpoints/*
+/MOTASG_Results/*
