@@ -824,29 +824,31 @@ if __name__ == "__main__":
         device = get_gpu_with_max_free_memory() if torch.cuda.is_available() else 'cpu'
     print(f"Using device: {device}")
 
-    # Set model_name with adding pretrain based GNN and train based GNN
-    args.model_name = args.model_name + '_' + args.layer + '_' + args.train_layer
+    # # Set model_name with adding pretrain based GNN and train based GNN
+    # args.model_name = args.model_name + '_' + args.layer + '_' + args.train_layer
 
-    # Load pretrain model
-    pretrain_model = build_pretrain_model(args, device)
-    pretrain_model.load_state_dict(torch.load(args.save_path))
-    pretrain_model.eval()
-    # train(args, pretrain_model, device)
+    # # Load pretrain model
+    # pretrain_model = build_pretrain_model(args, device)
+    # pretrain_model.load_state_dict(torch.load(args.save_path))
+    # pretrain_model.eval()
+    # # train(args, pretrain_model, device)
 
-    ### Train the model
-    print('--- LOADING TRAIN FILES ... ---')
-    train_num = 5
-    for number in range(1, train_num + 1):
-        # Train the model
-        train(args, pretrain_model, device)
+    # ### Train the model
+    # print('--- LOADING TRAIN FILES ... ---')
+    # train_num = 5
+    # for number in range(1, train_num + 1):
+    #     # Train the model
+    #     train(args, pretrain_model, device)
     
     # ### Test the model using combined checkpoint
     # print('--- LOADING TEST FILES ... ---')
     # xTe = np.load(os.path.join(args.data_path, 'pretrain_status_test_feature.npy'))
     # yTe = np.load(os.path.join(args.data_path, 'pretrain_status_test_label.npy'))
+    # yTe = yTe.reshape(-1, 1)  # Ensure yTe is a 2D array
     # print(xTe.shape, yTe.shape)
+    # args.num_entity = xTe.shape[1]
     # # Load both pretrain_model and downstream model from combined checkpoint
-    # combined_checkpoint_path = './MOTASG_Results/DepMap/MOTASG_Class_gat_gat/epoch_20/best_combined_model.pt'
+    # combined_checkpoint_path = './MOTASG_Results/DepMap/MOTASG_Class_gat_gat/epoch_50_1/best_combined_model.pt'
     # pretrain_model, model, checkpoint_info = load_combined_model(combined_checkpoint_path, args, device)
     # print(f"Loaded combined model from epoch {checkpoint_info['epoch']}")
     # print(f"Model test F1: {checkpoint_info['max_test_f1']}")

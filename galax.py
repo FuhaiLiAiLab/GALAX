@@ -2,6 +2,7 @@ import os
 import json
 import copy
 import torch
+import time
 import traceback
 import datetime
 import numpy as np
@@ -12,6 +13,8 @@ from pathlib import Path
 from config import arg_parse
 
 from motasg_explainer import (
+    get_gpu_with_max_free_memory,
+    load_combined_model,
     build_pretrain_model, 
     build_model, 
     kg_data, 
@@ -33,6 +36,79 @@ from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
 import requests
 import json
 from collections import defaultdict
+
+
+def select_best_gpu_device():
+    """
+    Select the best available GPU device with the most free memory.
+    Falls back to CPU if no GPU is available or if there are issues.
+    
+    Returns:
+        str: Device string (e.g., 'cuda:0', 'cuda:1', or 'cpu')
+    """
+    # Check if CUDA is available
+    if not torch.cuda.is_available():
+        print("CUDA is not available. Using CPU.")
+        return 'cpu'
+    
+    # Try to get GPU with max free memory from existing function
+    try:
+        device = get_gpu_with_max_free_memory()
+        print(f"Initial device selection: {device}")
+    except (RuntimeError, IndexError) as e:
+        print(f"Error in GPU selection: {e}")
+        print("Falling back to CPU")
+        return 'cpu'
+    
+    # Validate device selection
+    if device.startswith('cuda'):
+        device_id = int(device.split(':')[1])
+        available_devices = torch.cuda.device_count()
+        
+        if device_id >= available_devices:
+            print(f"Error: Device {device} not available. Available devices: {available_devices}")
+            print(f"Available device IDs: {list(range(available_devices))}")
+            
+            # Find the GPU with maximum free memory among available devices
+            max_free_memory = 0
+            best_device_id = 0
+            
+            for i in range(available_devices):
+                try:
+                    torch.cuda.set_device(i)
+                    free_memory = torch.cuda.get_device_properties(i).total_memory - torch.cuda.memory_allocated(i)
+                    print(f"Device {i}: {free_memory / (1024**3):.2f} GB free memory")
+                    
+                    if free_memory > max_free_memory:
+                        max_free_memory = free_memory
+                        best_device_id = i
+                except Exception as e:
+                    print(f"Error checking device {i}: {e}")
+                    continue
+            
+            device = f'cuda:{best_device_id}'
+            device_id = best_device_id
+            print(f"Selected device with most free memory: {device} ({max_free_memory / (1024**3):.2f} GB free)")
+        
+        # Set the device
+        try:
+            torch.cuda.set_device(device_id)
+            print(f"Set CUDA device to: {device_id}")
+        except Exception as e:
+            print(f"Error setting CUDA device {device_id}: {e}")
+            return 'cpu'
+        
+        # Verify the device is working
+        try:
+            test_tensor = torch.tensor([1.0], device=device)
+            print(f"✅ Device {device} is working correctly")
+            return device
+        except Exception as e:
+            print(f"❌ Device {device} test failed: {e}")
+            print("Falling back to CPU")
+            return 'cpu'
+    
+    return device
 
 def extract_proteins_with_chatgpt(text, api_key, api_url="https://api.openai.com/v1/chat/completions"):
     """
@@ -435,45 +511,55 @@ def refine_with_graph_context_prompt(sample_data, initial_reasoning, prev_protei
 
 def train(args, device):
     # Path to the saved file
-    json_path = "./QA_Data/multi_sample_qa_info_k100_bm100.json"
+    json_path = "./data/TargetQA/target_qa_k10_bm100.json"
     # Load QA info data
     with open(json_path, "r") as f: qa_info_data = json.load(f)
+    
+    # Create a unified timestamp for this run
+    run_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    # Check for existing results file to resume from
+    existing_results_file = "./TargetQA_Results/galax_results_20250707_134744.json"
+    # existing_results_file = None
+    processed_samples = set()
+
+    if existing_results_file is not None and os.path.exists(existing_results_file):
+        try:
+            with open(existing_results_file, "r") as f:
+                existing_results = json.load(f)
+                processed_samples = set(existing_results.keys())
+                print(f"Found existing results file with {len(processed_samples)} processed samples")
+                print(f"Processed samples: {sorted(processed_samples)}")
+                # Use the existing timestamp to continue appending to the same file
+                run_timestamp = "20250707_134744"  # Use the existing timestamp
+        except (json.JSONDecodeError, FileNotFoundError):
+            print("Could not load existing results file, starting fresh")
+
+    print(f"Starting/Resuming GALAX run with timestamp: {run_timestamp}")
+    
     # Load KG omics data
-    xAll_omics, omics_node_index_df, name_embeddings, desc_embeddings, all_edge_index, internal_edge_index, ppi_edge_index, ppi_edges = kg_data(args, device)
+    xAll, node_index_df, name_embeddings, desc_embeddings, all_edge_index, internal_edge_index, ppi_edge_index, ppi_edges = kg_data(args, device)
     # Load mapping dictionary between ID and Index
-    nodeid_index_data = pd.read_csv('./BMG/DTI_data/nodes_index.csv')
+    nodeid_index_data = pd.read_csv('./data/TargetQA/nodes_index.csv')
     nodeid_index_dict = dict(zip(nodeid_index_data['Node'], nodeid_index_data['Index']))
     index_nodeid_dict = dict(zip(nodeid_index_data['Index'], nodeid_index_data['Node']))
-    bmgc_protein_df = pd.read_csv('./BMG/BioMedGraphica-Conn/Entity/Protein/BioMedGraphica_Conn_Protein.csv')
+    bmgc_protein_df = pd.read_csv('./data/BioMedGraphica-Conn/Entity/Protein/BioMedGraphica_Conn_Protein.csv')
     # number of entity
-    args.num_entity = xAll_omics.shape[1]
-    num_entity = xAll_omics.shape[1]
+    args.num_entity = xAll.shape[1]
+    num_entity = xAll.shape[1]
 
-    # Load pretrain model
-    pretrain_model = build_pretrain_model(args, device)
-    pretrain_model.load_state_dict(torch.load(args.save_path))
+    # Load pretrain model and downstream model
+    pretrain_model, downstream_model, checkpoint_info = load_combined_model(args, device)
     pretrain_model.eval()
-    # Load model
-    downstream_model = build_model(args, device)
-    downstream_model.load_state_dict(torch.load(args.train_save_path))
     downstream_model.eval()
+    
     # Load LLM model
-    # Option 1: Use general LLM model
-    # model_name = "meta-llama/Llama-2-7b-chat-hf"
-    # Check if a local model path is provided
-    model_name = './Checkpoints/finetuned_model/CRISPR-QA-20250425_014540/checkpoint-100'
+    model_name = './checkpoints/TargetQA-20250707_051359/checkpoint-335'
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     llm_model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.float16 if device == "cuda" else torch.float32)
-    llm_model = llm_model.to(device)  # explicitly move to CUDA or CPU
-    # # Build pipeline
+    llm_model = llm_model.to(device)
     llm_pipeline = pipeline("text-generation", model=llm_model, tokenizer=tokenizer)
-    # # Option 2: Use BioGPT model
-    # # model_name = "microsoft/biogpt"
-    # model_name = "microsoft/BioGPT-Large"
-    # tokenizer = BioGptTokenizer.from_pretrained(model_name)
-    # llm_model = BioGptForCausalLM.from_pretrained(model_name)
-    # # Build pipeline
-    # llm_pipeline = pipeline('text-generation', model=llm_model, tokenizer=tokenizer)
+    
     ner_model_type = "ChatGPT"
     # Load NER model
     if ner_model_type == "GLiNER":
@@ -481,32 +567,42 @@ def train(args, device):
         gliner_model = GLiNER.from_pretrained(gliner_model_name)
         labels = ["gene"]
     elif ner_model_type == "ChatGPT":
-        # Replace NER model with ChatGPT API
-        api_key = "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"  # Replace with actual API key
+        api_key = "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"
         api_url = "https://api.openai.com/v1/chat/completions"
     
-    # Create a unified timestamp for this run
-    run_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    print(f"Starting GALAX run with timestamp: {run_timestamp}")
     # Path to plotted files
-    plots_main_dir = os.path.join(".", "Plots")  # Create main Plots directory if it doesn't exist
+    plots_main_dir = os.path.join(".", "Plots")
     if not os.path.exists(plots_main_dir): os.makedirs(plots_main_dir)
-    # Create timestamped subfolder within the main Plots directory
     plots_dir = os.path.join(plots_main_dir, f"Run_{run_timestamp}")
     if not os.path.exists(plots_dir): os.makedirs(plots_dir)
 
-    # Training based on data
-    for sample_id, sample_info in qa_info_data.items():
+    # Filter out already processed samples
+    remaining_samples = {k: v for k, v in qa_info_data.items() if k not in processed_samples}
+    total_samples = len(qa_info_data)
+    remaining_count = len(remaining_samples)
+
+    print(f"Total samples: {total_samples}")
+    print(f"Already processed: {len(processed_samples)}")
+    print(f"Remaining to process: {remaining_count}")
+
+    if remaining_count == 0:
+        print("All samples have already been processed!")
+        return
+
+    # Training based on remaining data
+    for idx, (sample_id, sample_info) in enumerate(remaining_samples.items()):
+        current_position = len(processed_samples) + idx + 1
+        print(f"\n{'='*80}")
+        print(f"🧬 Running GALAX Model on Sample ID: {sample_id} ({current_position}/{total_samples})")
+        print(f"{'='*80}\n")
+        
         # ***************************************************************************************************************************
         # **************************************************** LLM 1st STEP *********************************************************
         # ***************************************************************************************************************************
         # ************************************** LLM Reasoning with Prompt ************************************
         # import pdb; pdb.set_trace()
-        print(f"\n{'='*80}")
-        print(f"🧬 Running GALAX Model on Sample ID: {sample_id}")
-        print(f"{'='*80}\n")
-        prompt1 = generate_proteins_prompt(sample_info)
         print(f"\n{'='*50}")
+        prompt1 = generate_proteins_prompt(sample_info)
         print("Step 1 - Initial Prompt:\n", prompt1)
         print(f"\n{'='*50}")
         print("\n")
@@ -519,6 +615,16 @@ def train(args, device):
             initial_reasoning = initial_reasoning.split('</p>')[0]
         elif '</INST>' in initial_reasoning:
             initial_reasoning = initial_reasoning.split('</INST>')[0]
+        elif '[/Output]' in initial_reasoning:
+            initial_reasoning = initial_reasoning.split('[/Output]')[0]
+        # Remove the part after the second '[/Instruction]'
+        instruction_count = initial_reasoning.count('[/Instruction]')
+        if instruction_count >= 2:
+            parts = initial_reasoning.split('[/Instruction]')
+            initial_reasoning = '[/Instruction]'.join(parts[:2])
+        elif instruction_count == 1:
+            # If only one [/Instruction], keep everything up to it
+            initial_reasoning = initial_reasoning.split('[/Instruction]')[0]
         print("Step 1 - Initial LLM Reasoning:\n", initial_reasoning)
         print("\n")
         # ********************************** Convert LLM Protein to Graph Node ********************************
@@ -531,9 +637,37 @@ def train(args, device):
             llm_1st_step_response_hgnc_list = list(unique_entities.keys())
             print("\nStep 1 - LLM Gene/Protein List:\n", llm_1st_step_response_hgnc_list)
         elif ner_model_type == "ChatGPT":
-            # Use ChatGPT API to extract entities
-            llm_1st_step_response_hgnc_list = extract_proteins_with_chatgpt(initial_reasoning, api_key, api_url)
-            print("\nStep 1 - LLM Gene/Protein List:\n", llm_1st_step_response_hgnc_list)
+            # Use ChatGPT API to extract entities with retry logic
+            max_retries = 3
+            retry_delay = 2  # seconds
+            for attempt in range(max_retries):
+                try:
+                    print(f"Attempting ChatGPT API call (attempt {attempt + 1}/{max_retries})...")
+                    llm_1st_step_response_hgnc_list = extract_proteins_with_chatgpt(initial_reasoning, api_key, api_url)
+                    print("\nStep 1 - LLM Gene/Protein List:\n", llm_1st_step_response_hgnc_list)
+                    break  # Success, exit retry loop
+                except (requests.exceptions.ConnectionError, requests.exceptions.Timeout, requests.exceptions.RequestException) as e:
+                    print(f"ChatGPT API connection error (attempt {attempt + 1}/{max_retries}): {str(e)}")
+                    if attempt < max_retries - 1:
+                        print(f"Retrying in {retry_delay} seconds...")
+                        time.sleep(retry_delay)
+                        retry_delay *= 2  # Exponential backoff
+                    else:
+                        print("All ChatGPT API attempts failed due to connection issues.")
+                        print("Using empty list as fallback for protein extraction.")
+                        llm_1st_step_response_hgnc_list = []
+                        break
+                except Exception as e:
+                    print(f"ChatGPT API call failed with unexpected error (attempt {attempt + 1}/{max_retries}): {str(e)}")
+                    if attempt < max_retries - 1:
+                        print(f"Retrying in {retry_delay} seconds...")
+                        time.sleep(retry_delay)
+                        retry_delay *= 2  # Exponential backoff
+                    else:
+                        print("All ChatGPT API attempts failed.")
+                        print("Using empty list as fallback for protein extraction.")
+                        llm_1st_step_response_hgnc_list = []
+                        break
         # convert llm_1st_step_response_hgnc_list to bmgc_id list by hgnc_nodeid_dict
         llm_1st_step_bmgc_id_hgnc_dict, llm_1st_step_response_bmgc_id_list = hgnc_to_bmgc_pt_id(llm_1st_step_response_hgnc_list, bmgc_protein_df)
         # convert llm_1st_step_response_bmgc_id_list to llm_protein_index by nodeid_index_dict
@@ -571,13 +705,13 @@ def train(args, device):
         top_protein_index = [nodeid_index_dict[bmgc_id] for bmgc_id in top_protein_bmgc_id if bmgc_id in nodeid_index_dict]
 
         # Extract sample KG information
-        selected_sample_index = sample_info["sample_dti_index"]
+        selected_sample_index = sample_info["sample_index"]
         disease_protein_bmgc_id = sample_info["input"]["knowledge_graph"]["disease_protein"]["bmgc_ids"]
         disease_protein_index = sample_info["input"]["knowledge_graph"]["disease_protein"]["indices"]
         ppi_nodes_index = sample_info["input"]["knowledge_graph"]["ppi_neighbors"]["indices"]
 
         # Encode selected_sample_x using the pretrained model and downstream_model
-        selected_sample_x = xAll_omics[selected_sample_index, :].reshape(-1, 1)  # selected sample feature
+        selected_sample_x = xAll[selected_sample_index, :].reshape(-1, 1)  # selected sample feature
         selected_sample_x_emb = pre_embed(pretrain_model, downstream_model, selected_sample_x, 
                                         name_embeddings, desc_embeddings, 
                                         all_edge_index, internal_edge_index, ppi_edge_index, device)
@@ -832,6 +966,14 @@ def train(args, device):
             refined_reasoning = refined_reasoning.split("</p>")[0]
         elif "</INST>" in refined_reasoning:
             refined_reasoning = refined_reasoning.split("</INST>")[0]
+        # Remove the part after the second '[/Instruction]'
+        instruction_count = initial_reasoning.count('[/Instruction]')
+        if instruction_count >= 2:
+            parts = initial_reasoning.split('[/Instruction]')
+            initial_reasoning = '[/Instruction]'.join(parts[:2])
+        elif instruction_count == 1:
+            # If only one [/Instruction], keep everything up to it
+            initial_reasoning = initial_reasoning.split('[/Instruction]')[0]
         print("Step 2 - Refined LLM Reasoning:\n", refined_reasoning)
         # ********************************** Convert LLM Protein to Protein Node ********************************
         if ner_model_type == "GLiNER":
@@ -908,9 +1050,15 @@ def train(args, device):
 
 if __name__ == "__main__":
     args = arg_parse()
-    # Check device
-    device = 'cpu' if args.device < 0 else (f'cuda:{args.device}' if torch.cuda.is_available() else 'cpu')
-    print(f"Using device: {device}")
+    
+    # Check device and select the one with most available memory
+    if hasattr(args, 'device') and args.device < 0:
+        device = 'cpu'
+        print("Using CPU (forced by args)")
+    else:
+        device = select_best_gpu_device()
+    
+    print(f"Final device selection: {device}")
 
     # Train the model
     train(args, device)

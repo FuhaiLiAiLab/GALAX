@@ -221,7 +221,7 @@ def concatenate_json_files(json_paths, test_samples):
             traceback.print_exc()
     
     # Save the combined data to a new JSON file
-    combined_data_path = './QA_Results/combined_data.json'
+    combined_data_path = './TargetQA_Results/combined_data.json'
     
     # Create the directory if it doesn't exist
     os.makedirs(os.path.dirname(combined_data_path), exist_ok=True)
@@ -247,7 +247,7 @@ def combined_eval_data(combined_data):
     average_metrics = calculate_average_metrics(combined_data)
     
     # Save the average metrics to a new JSON file
-    with open('./QA_Results/combined_average_metrics.json', 'w') as f:
+    with open('./TargetQA_Results/combined_average_metrics.json', 'w') as f:
         json.dump(average_metrics, f, indent=2)
     
     return average_metrics
@@ -266,17 +266,15 @@ def sep_eval_test_data(json_data):
     import os
     
     # Load required dataframes
-    dti_combined_samples_df = pd.read_csv('./BMG/process_data/dti_combined_samples.csv')
-    test_dti_crispr_rna_samples_index_df = pd.read_csv('./BMG/CRISPR-Graph/test_dti_crispr_rna_samples_index.csv')
-    
-    # Merge the dti_combined_samples_df and test_dti_crispr_rna_samples_index_df on the Sample and depMapID
-    test_dti_crispr_rna_samples_index_info_df = test_dti_crispr_rna_samples_index_df.merge(dti_combined_samples_df, left_on='Sample', right_on='depMapID')
-    
+    target_sample_info_index_df = pd.read_csv('./data/TargetQA/target_sample_info_index.csv')
+    test_sample_df = pd.read_csv('./data/TargetQA/test_samples.csv')
+    target_test_sample_info_df = pd.merge(target_sample_info_index_df, test_sample_df, on='depMapID', how='inner')
+
     # Select columns [depMapID, Name, BMGC_Disease_ID, BMGC_Disease_name]
-    test_dti_crispr_rna_samples_index_info_df = test_dti_crispr_rna_samples_index_info_df[['depMapID', 'Name', 'tcga_code', 'BMGC_Disease_ID', 'BMGC_Disease_name']]
+    target_test_sample_info_df = target_test_sample_info_df[['depMapID', 'Name', 'tcga_code', 'BMGC_Disease_ID', 'BMGC_Disease_name']]
     
     # Get the unique diseases using TCGA code
-    unique_diseases = test_dti_crispr_rna_samples_index_info_df['tcga_code'].unique()
+    unique_diseases = target_test_sample_info_df['tcga_code'].unique()
     print(f"Found {len(unique_diseases)} unique disease TCGA codes")
 
     # Create dictionaries for disease samples and names
@@ -290,8 +288,8 @@ def sep_eval_test_data(json_data):
             continue
             
         # Get the disease name for this TCGA code
-        disease_info = test_dti_crispr_rna_samples_index_info_df[
-            test_dti_crispr_rna_samples_index_info_df['tcga_code'] == tcga_code
+        disease_info = target_test_sample_info_df[
+            target_test_sample_info_df['tcga_code'] == tcga_code
         ]
         
         if len(disease_info) == 0:
@@ -409,7 +407,7 @@ def sep_eval_test_data(json_data):
             print(f"Warning: No valid samples found for disease {disease_id}: {disease_name}")
     
     # Create directory if it doesn't exist
-    output_dir = './QA_Results/disease_organized'
+    output_dir = './TargetQA_Results/disease_organized'
     os.makedirs(output_dir, exist_ok=True)
     
     # Save the organized data to JSON files
@@ -565,18 +563,18 @@ def generate_disease_comparison_table(disease_data):
     df_raw = pd.DataFrame(df_data_raw, index=pd.MultiIndex.from_tuples(rows), columns=column_headers)
     
     # Save the table to CSV with full precision (8+ digits)
-    os.makedirs('./QA_Results/tables', exist_ok=True)
-    df_raw.to_csv('./QA_Results/tables/disease_comparison_table.csv', float_format='%.8f')
+    os.makedirs('./TargetQA_Results/tables', exist_ok=True)
+    df_raw.to_csv('./TargetQA_Results/tables/disease_comparison_table.csv', float_format='%.8f')
     
     # Also save an Excel version with full precision
     try:
-        with pd.ExcelWriter('./QA_Results/tables/disease_comparison_table.xlsx', engine='openpyxl') as writer:
+        with pd.ExcelWriter('./TargetQA_Results/tables/disease_comparison_table.xlsx', engine='openpyxl') as writer:
             df_raw.to_excel(writer, sheet_name='Full_Precision')
             df.to_excel(writer, sheet_name='Formatted')  # Also include the formatted version
     except Exception as e:
         print(f"Could not save Excel file: {e}")
     
-    print(f"Comparison table saved to './QA_Results/tables/disease_comparison_table.csv' with 8 decimal places")
+    print(f"Comparison table saved to './TargetQA_Results/tables/disease_comparison_table.csv' with 8 decimal places")
     print(f"Overall average metrics included as first column")
     
     # Return the display version with formatted values
@@ -585,17 +583,17 @@ def generate_disease_comparison_table(disease_data):
 
 if __name__ == '__main__':
     # Load the JSON data from file QA-Results
-    m2t_json_path = './QA_Results/m2t_target_assignments.json' # m2t_bm
-    motasg_gat_json_path = './QA_Results/motasg_gat_results.json' # gat
-    plain_omics_json_path = './QA_Results/plain_omics_results_{}.json' # llm_1st
-    plain_omicskg_json_path = './QA_Results/plain_omicskg_results_{}.json' # llm_1st
-    bmgc_omics_json_path = './QA_Results/bmgc_omics_results_{}.json' # llm_1st
-    bmgc_omicskg_json_path = './QA_Results/bmgc_omicskg_results_{}.json' # llm_1st
-    qallm_omics_json_path = './QA_Results/qallm_omics_results_{}.json' # llm_1st
-    qallm_omicskg_json_path = './QA_Results/qallm_omicskg_results_{}.json' # llm_1st
-    gretriever_json_path = './QA_Results/gretriever_results_{}.json' # llm_1st
-    galax_json_path = './QA_Results/galax_results_{}.json' # llm_1st and llm_2nd are in galax_json_path
-    galax_2nd_add_1st_json_path = './QA_Results/galax_2nd_step_results_add1st_{}.json' # llm_2nd_1st and llm_2nd_2nd are in galax_2nd_add_1st_json_path
+    m2t_json_path = './TargetQA_Results/m2t_target_assignments.json' # m2t_bm
+    motasg_gat_json_path = './TargetQA_Results/motasg_gat_results.json' # gat
+    plain_omics_json_path = './TargetQA_Results/plain_omics_results_{}.json' # llm_1st
+    plain_omicskg_json_path = './TargetQA_Results/plain_omicskg_results_{}.json' # llm_1st
+    bmgc_omics_json_path = './TargetQA_Results/bmgc_omics_results_{}.json' # llm_1st
+    bmgc_omicskg_json_path = './TargetQA_Results/bmgc_omicskg_results_{}.json' # llm_1st
+    qallm_omics_json_path = './TargetQA_Results/qallm_omics_results_{}.json' # llm_1st
+    qallm_omicskg_json_path = './TargetQA_Results/qallm_omicskg_results_{}.json' # llm_1st
+    gretriever_json_path = './TargetQA_Results/gretriever_results_{}.json' # llm_1st
+    galax_json_path = './TargetQA_Results/galax_results_20250707_134744.json' # llm_1st and llm_2nd are in galax_json_path
+    galax_2nd_add_1st_json_path = './TargetQA_Results/galax_2nd_step_results_add1st_{}.json' # llm_2nd_1st and llm_2nd_2nd are in galax_2nd_add_1st_json_path
 
     json_paths = [
         m2t_json_path,
@@ -612,8 +610,8 @@ if __name__ == '__main__':
     ]
 
     # Load the test data
-    test_dti_crispr_rna_samples_index_df = pd.read_csv('./BMG/CRISPR-Graph/test_dti_crispr_rna_samples_index.csv')
-    test_samples = test_dti_crispr_rna_samples_index_df['Sample'].tolist()
+    test_dti_crispr_rna_samples_index_df = pd.read_csv('./data/TargetQA/test_samples.csv')
+    test_samples = test_dti_crispr_rna_samples_index_df['depMapID'].tolist()
 
     combined_data = concatenate_json_files(json_paths, test_samples)
     combined_eval_data(combined_data)

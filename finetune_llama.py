@@ -325,7 +325,7 @@ def finetune(args, device, run_timestamp):
     
     # Initialize wandb only on the main process
     wandb_project_name = "GALAX"
-    wandb_run_name = f"CRISPR-QA-{run_timestamp}"
+    wandb_run_name = f"TargetQA-{run_timestamp}"
     
     # Get local rank from environment variable set by DeepSpeed/distributed training
     local_rank = int(os.environ.get("LOCAL_RANK", 0))
@@ -350,16 +350,18 @@ def finetune(args, device, run_timestamp):
         # Disable wandb on non-main processes
         logger.info(f"Process rank {local_rank} - wandb disabled")
         os.environ["WANDB_MODE"] = "disabled"
+        # Also initialize wandb in disabled mode to prevent issues
+        wandb.init(mode="disabled")
     
     # Check if a local model path is provided
     base_model_name = './checkpoints/BioEntity-LLM-20250421_045108/checkpoint-336'
     logger.info(f"Loading model from local path: {base_model_name}")
 
     finetuned_model_name = wandb_run_name
-    output_dir = os.path.join("Checkpoints", "finetuned_model", finetuned_model_name)
+    output_dir = os.path.join("checkpoints", finetuned_model_name)
     Path(output_dir).mkdir(parents=True, exist_ok=True)
 
-    json_path = "./TargetQA/target_qa_info_k10_bm100_tr.json"
+    json_path = "./data/TargetQA/target_qa_k10_bm100_tr.json"
     logger.info(f"Loading QA data from {json_path}")
     with open(json_path, "r") as f:
         qa_info_data = json.load(f)
@@ -395,9 +397,9 @@ def finetune(args, device, run_timestamp):
         num_train_epochs=5,
         per_device_train_batch_size=1,
         gradient_accumulation_steps=2,
-        save_steps=25,
+        save_steps=335,
         save_strategy="steps",
-        eval_steps=25,
+        eval_steps=335,
         logging_steps=1,  # Log every step
         learning_rate=1e-5,
         weight_decay=0.0,
@@ -452,40 +454,6 @@ def finetune(args, device, run_timestamp):
         data_collator=data_collator,
         callbacks=[wandb_callback]  # Add the wandb callback
     )
-    
-    # Replace the evaluation section with this:
-    logger.info("*** Performing initial evaluation before training ***")
-    try:
-        # Temporarily disable DeepSpeed for evaluation
-        original_deepspeed = training_args.deepspeed
-        training_args.deepspeed = None
-        
-        # Create a separate model instance for evaluation
-        eval_model = AutoModelForCausalLM.from_pretrained(
-            base_model_name,
-            torch_dtype=torch.bfloat16,
-            device_map="auto",
-            trust_remote_code=True
-        )
-        
-        # Create a separate trainer for evaluation
-        eval_trainer = Trainer(
-            model=eval_model,
-            args=training_args,
-            eval_dataset=tokenized_eval_dataset,
-            tokenizer=tokenizer,
-            data_collator=data_collator
-        )
-        
-        # Run evaluation
-        initial_metrics = eval_trainer.evaluate()
-        logger.info(f"Initial evaluation metrics: {initial_metrics}")
-        
-        # Restore DeepSpeed setting for training
-        training_args.deepspeed = original_deepspeed
-    except Exception as e:
-        logger.warning(f"Initial evaluation failed: {e}. Continuing with training...")
-        initial_metrics = {"error": str(e)}
 
     logger.info("Starting full model fine-tuning process...")
     train_result = trainer.train()
@@ -499,7 +467,7 @@ def finetune(args, device, run_timestamp):
     tokenizer.save_pretrained(output_dir)
 
     with open(os.path.join(output_dir, "README.md"), "w") as f:
-        f.write(f"# CRISPR-QA Fine-tuned Model\n\n")
+        f.write(f"# TargetQA Fine-tuned Model\n\n")
         f.write(f"Base model: {base_model_name}\n")
         f.write(f"Fine-tuned on: {run_timestamp}\n")
         f.write(f"Training examples: {len(training_data)}\n")
@@ -580,7 +548,7 @@ def load_and_test_model(model_path, device):
     )
     
     # Test prompts
-    test_json_path = "./TargetQA/target_qa_info_k10_bm100_te.json"
+    test_json_path = "./data/TargetQA/target_qa_k10_bm100_te.json"
     test_prompts = load_test_prompts_from_json(test_json_path, num_samples=2)
     
     logger.info("Running test prompts...")
@@ -639,7 +607,7 @@ if __name__ == "__main__":
     finetune(args, device, run_timestamp)
 
     # # Model path to load
-    # model_path = './checkpoints/CRISPR-QA-20250424_164126/checkpoint-75'
+    # model_path = './checkpoints/TargetQA-20250424_164126/checkpoint-75'
     # # Load and test the model
     # model, tokenizer, pipe = load_and_test_model(model_path, device)
     # # Interactive mode

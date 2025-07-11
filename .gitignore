@@ -25,3 +25,10 @@
 # model checkpoints
 /checkpoints/*
 /MOTASG_Results/*
+/TargetQA_Results/*
+
+# wandb
+/wandb/*
+
+# Explainable Figures
+/Plots/*

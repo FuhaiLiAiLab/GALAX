@@ -35,6 +35,97 @@ from torch_geometric.nn import (
 
 from config import arg_parse
 
+
+def get_gpu_with_max_free_memory():
+    """
+    Returns the GPU device ID with the most available memory.
+    Returns 'cpu' if no CUDA devices are available.
+    """
+    if not torch.cuda.is_available():
+        return 'cpu'
+    
+    try:
+        # Try to use nvidia-smi to get memory info
+        import subprocess
+        import re
+        
+        # Run nvidia-smi to get memory usage info
+        result = subprocess.check_output(['nvidia-smi', '--query-gpu=memory.free', '--format=csv,nounits,noheader'], 
+                                        encoding='utf-8')
+        # Parse the output to get free memory values
+        free_memory = [int(x) for x in result.strip().split('\n')]
+        
+        # Get the GPU with maximum free memory
+        max_free_device_id = free_memory.index(max(free_memory))
+        print(f"Selected GPU {max_free_device_id} with {max(free_memory)} MB free memory")
+        return f'cuda:{max_free_device_id}'
+    
+    except (subprocess.CalledProcessError, FileNotFoundError, ImportError) as e:
+        # If nvidia-smi fails, try to use torch's built-in function (less accurate)
+        print(f"Warning: nvidia-smi failed ({e}). Using first available GPU.")
+        try:
+            # Get device count and find one with most memory
+            device_count = torch.cuda.device_count()
+            if device_count == 0:
+                return 'cpu'
+            elif device_count == 1:
+                return 'cuda:0'
+            
+            # Try to find the GPU with most free memory
+            max_free = 0
+            max_device = 0
+            for device_id in range(device_count):
+                torch.cuda.set_device(device_id)
+                torch.cuda.empty_cache()
+                free_mem = torch.cuda.memory_reserved(device_id) - torch.cuda.memory_allocated(device_id)
+                if free_mem > max_free:
+                    max_free = free_mem
+                    max_device = device_id
+            
+            print(f"Selected GPU {max_device} based on torch memory stats")
+            return f'cuda:{max_device}'
+        except:
+            # Fall back to the first GPU if all else fails
+            return 'cuda:0'
+
+def load_combined_model(args, device):
+    """
+    Load both pretrain_model and downstream model from a combined checkpoint.
+    
+    Args:
+        checkpoint_path (str): Path to the combined model checkpoint
+        args: Arguments object with model parameters
+        device: Device to load models on
+    
+    Returns:
+        tuple: (pretrain_model, downstream_model, checkpoint_info)
+    """
+    checkpoint = torch.load(args.graph_foundation_model_path, map_location=device)
+    
+    # Build models
+    pretrain_model = build_pretrain_model(args, device)
+    downstream_model = build_model(args, device)
+    
+    # Load state dictionaries
+    pretrain_model.load_state_dict(checkpoint['pretrain_model'])
+    downstream_model.load_state_dict(checkpoint['downstream_model'])
+    
+    # Set to evaluation mode
+    pretrain_model.eval()
+    downstream_model.eval()
+    
+    # Extract additional info
+    checkpoint_info = {
+        'epoch': checkpoint.get('epoch', None),
+        'max_train_acc': checkpoint.get('max_train_acc', None),
+        'max_test_acc': checkpoint.get('max_test_acc', None),
+        'max_train_f1': checkpoint.get('max_train_f1', None),
+        'max_test_f1': checkpoint.get('max_test_f1', None),
+        'saved_args': checkpoint.get('args', None)
+    }
+    
+    return pretrain_model, downstream_model, checkpoint_info
+
 def build_pretrain_model(args, device):
     mask = MaskEdge(p=args.p)
 
@@ -1078,21 +1169,20 @@ def generate_best_graph(explainer, target_class=1, device='cuda', nodeid_index_d
 def kg_data(args, device):
     print('Loading kg data...')
     # Load DTI data
-    xAll = np.load('./BMG/DTI_data/dti_bmgc_omics.npy')  # Omics Input
+    xAll = np.load('./data/TargetQA/target_crispr_feature.npy')  # All Input
     xAll = torch.from_numpy(xAll).to(device)
     # tailor to pretrain data
-    omics_node_index_df = pd.read_csv('./BMG/Pretrain_data/omics_nodes_index.csv')
-    omics_node_index_list = omics_node_index_df['Index'].tolist()
-    omics_node_index = torch.tensor(omics_node_index_list, dtype=torch.long).to(device)
-    xAll_omics = xAll[:, omics_node_index]
+    node_index_df = pd.read_csv('./data/TargetQA/nodes_index.csv')
+    node_index_list = node_index_df['Index'].tolist()
+    node_index = torch.tensor(node_index_list, dtype=torch.long).to(device)
     # other data just import from pretrain data
-    name_embeddings = np.load('./BMG/Pretrain_data/x_name_emb.npy').reshape(-1, args.lm_emb_dim) # temporary using Pretrain data/ should use DTI
+    name_embeddings = np.load('./data/TargetQA/x_name_emb.npy').reshape(-1, args.lm_emb_dim) # temporary using Pretrain data/ should use DTI
     name_embeddings = torch.from_numpy(name_embeddings).float().to(device)
-    desc_embeddings = np.load('./BMG/Pretrain_data/x_desc_emb.npy').reshape(-1, args.lm_emb_dim) # temporary using Pretrain data/ should use DTI
+    desc_embeddings = np.load('./data/TargetQA/x_desc_emb.npy').reshape(-1, args.lm_emb_dim) # temporary using Pretrain data/ should use DTI
     desc_embeddings = torch.from_numpy(desc_embeddings).float().to(device)
-    all_edge_index = np.load('./BMG/Pretrain_data/edge_index.npy')
-    internal_edge_index = np.load('./BMG/Pretrain_data/internal_edge_index.npy')
-    ppi_edge_index = np.load('./BMG/Pretrain_data/ppi_edge_index.npy')
+    all_edge_index = np.load('./data/TargetQA/edge_index.npy')
+    internal_edge_index = np.load('./data/TargetQA/internal_edge_index.npy')
+    ppi_edge_index = np.load('./data/TargetQA/ppi_edge_index.npy')
     all_edge_index = torch.from_numpy(all_edge_index).long().to(device)
     internal_edge_index = torch.from_numpy(internal_edge_index).long().to(device)
     ppi_edge_index = torch.from_numpy(ppi_edge_index).long().to(device)
@@ -1102,7 +1192,7 @@ def kg_data(args, device):
     reverse_edge_array = edge_array[:, [1, 0]]
     all_edges_array = np.vstack([edge_array, reverse_edge_array])
     ppi_edges = set(map(tuple, all_edges_array))
-    return xAll_omics, omics_node_index_df, name_embeddings, desc_embeddings, all_edge_index, internal_edge_index, ppi_edge_index, ppi_edges
+    return xAll, node_index_df, name_embeddings, desc_embeddings, all_edge_index, internal_edge_index, ppi_edge_index, ppi_edges
 
 
 def bmgc_pt_id_to_hgnc(bmgc_id_list, bmgc_protein_df):
