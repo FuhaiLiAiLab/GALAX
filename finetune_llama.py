@@ -586,7 +586,7 @@ if __name__ == "__main__":
     run_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     
     # Configure wandb - set your API key if needed
-    wandb.login(key="fd3ec6d2acb46f89bfff7990f841291f15325b18")  # Uncomment if you need to login manually
+    wandb.login(key="")  # Uncomment if you need to login manually
     
     # Check device - optimize for H100
     if torch.cuda.is_available():

@@ -486,7 +486,6 @@ def train(args, device):
     
     # Load LLM model
     model_name = './checkpoints/TargetQA-20250707_051359/checkpoint-335'
-    # model_name = './checkpoints/TargetQA-20250707_051359/checkpoint-150'
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     llm_model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.float16 if device == "cuda" else torch.float32)
     llm_model = llm_model.to(device)
@@ -499,7 +498,7 @@ def train(args, device):
         gliner_model = GLiNER.from_pretrained(gliner_model_name)
         labels = ["gene"]
     elif ner_model_type == "ChatGPT":
-        api_key = "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"
+        api_key = "" # fill your OpenAI API key here
         api_url = "https://api.openai.com/v1/chat/completions"
     
     # Path to plotted files

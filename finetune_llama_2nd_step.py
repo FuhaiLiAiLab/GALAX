@@ -813,7 +813,7 @@ def load_and_test_model(model_path, device, output_path, test_json_path, g_json_
         labels = ["gene"]
     elif ner_model_type == "ChatGPT":
         # Replace NER model with ChatGPT API
-        api_key = "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"  # Replace with actual API key
+        api_key = ""  # Replace with actual API key
         api_url = "https://api.openai.com/v1/chat/completions"
     
     logger.info(f"Running test prompts for {len(test_samples)} samples...")
@@ -932,7 +932,7 @@ if __name__ == "__main__":
     run_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     
     # Configure wandb - set your API key if needed
-    wandb.login(key="fd3ec6d2acb46f89bfff7990f841291f15325b18")  # Uncomment if you need to login manually
+    wandb.login(key="")  # Uncomment if you need to login manually
     
     # Check device - optimize for H100
     if torch.cuda.is_available():
