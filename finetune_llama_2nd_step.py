@@ -483,12 +483,12 @@ class WandbLossCallback(TrainerCallback):
         if metrics is not None:
             wandb.log({"eval/loss": metrics.get("eval_loss")}, step=state.global_step)
 
-def finetune(args, device, run_timestamp):
+def finetune(args, device, base_model_name, json_path, g_json_path, run_timestamp):
     logger.info(f"Starting LLM finetuning run with timestamp: {run_timestamp}")
     
     # Initialize wandb only on the main process
     wandb_project_name = "GALAX"
-    wandb_run_name = f"CRISPR-2nd-QA-{run_timestamp}"
+    wandb_run_name = f"Target-2nd-QA-{run_timestamp}"
     
     # Get local rank from environment variable set by DeepSpeed/distributed training
     local_rank = int(os.environ.get("LOCAL_RANK", 0))
@@ -500,7 +500,7 @@ def finetune(args, device, run_timestamp):
             project=wandb_project_name,
             name=wandb_run_name,
             config={
-                "base_model": './Checkpoints/finetuned_model/CRISPR-QA-20250425_014540/checkpoint-125',
+                "base_model": base_model_name,
                 "num_epochs": 5,
                 "batch_size": 1,
                 "learning_rate": 1e-5,
@@ -515,20 +515,16 @@ def finetune(args, device, run_timestamp):
         os.environ["WANDB_MODE"] = "disabled"
     
     # Check if a local model path is provided
-    base_model_name = './Checkpoints/finetuned_model/CRISPR-QA-20250425_014540/checkpoint-125'
     logger.info(f"Loading model from local path: {base_model_name}")
 
     finetuned_model_name = wandb_run_name
-    output_dir = os.path.join("Checkpoints", "finetuned_model", finetuned_model_name)
+    output_dir = os.path.join("checkpoints", "language_foundation", finetuned_model_name)
     Path(output_dir).mkdir(parents=True, exist_ok=True)
 
-    json_path = "./QA_Data/multi_sample_qa_info_k100_bm100_tr.json"
     logger.info(f"Loading QA data from {json_path}")
     with open(json_path, "r") as f:
         qa_info_data = json.load(f)
 
-    # g_json_path = "./QA_Results/galax_results_20250425_033734.json"
-    g_json_path = "./QA_Results-1/galax_results_20250426_151932.json"
     logger.info(f"Loading graph data from {g_json_path}")
     with open(g_json_path, "r") as f:
         g_data = json.load(f)
@@ -564,9 +560,9 @@ def finetune(args, device, run_timestamp):
         num_train_epochs=5,
         per_device_train_batch_size=1,
         gradient_accumulation_steps=2,
-        save_steps=19, # 25
+        save_steps=67, # 335
         save_strategy="steps",
-        eval_steps=19, # 25
+        eval_steps=67, # 335
         logging_steps=1,  # Log every step
         learning_rate=1e-5,
         weight_decay=0.0,
@@ -668,12 +664,12 @@ def finetune(args, device, run_timestamp):
     tokenizer.save_pretrained(output_dir)
 
     with open(os.path.join(output_dir, "README.md"), "w") as f:
-        f.write(f"# CRISPR-QA Fine-tuned Model\n\n")
+        f.write(f"# Target-QA Fine-tuned Model\n\n")
         f.write(f"Base model: {base_model_name}\n")
         f.write(f"Fine-tuned on: {run_timestamp}\n")
         f.write(f"Training examples: {len(training_data)}\n")
         f.write(f"Fine-tuning method: Full model fine-tuning with DeepSpeed\n")
-        f.write(f"Description: Model fine-tuned for protein identification in CRISPR screening data\n")
+        f.write(f"Description: Model fine-tuned for protein identification in Target screening data\n")
 
     # Finish wandb run
     wandb.finish()
@@ -736,7 +732,54 @@ def load_test_prompts_from_json(json_path, g_json_path, num_samples=None):
     return test_samples
 
 
-def load_and_test_model(model_path, device, output_path=None):
+def clean_reasoning_output(text, reasoning_type="reasoning"):
+    """Clean LLM output by removing end-of-sequence tokens, artifacts, and repeated content"""
+    
+    # Step 1: Remove all scattered </s> tokens throughout the text
+    text = re.sub(r'</s>', '', text)
+    
+    # Step 2: Look for pattern where content repeats after a clear boundary
+    # Find the end of the first complete response (usually ends with a summary statement)
+    end_markers = [
+        r"These genes represent critical vulnerabilities for the given cell line under the disease context\.",
+        r"These genes represent critical vulnerabilities.*?context\.",
+        r"The prioritized gene list is as follows:\s*\n\n(?:\d+\.\s+\w+\s*\n)*"
+    ]
+    
+    for marker in end_markers:
+        match = re.search(marker, text, re.DOTALL)
+        if match:
+            # Take everything up to and including the marker
+            text = text[:match.end()]
+            break
+    
+    # Step 3: Handle simple EOS patterns if no end markers found
+    patterns_to_split = ["</p>", "</INST>", "[/INST]", "[/Output]", "[/Instruction]"]
+    for pattern in patterns_to_split:
+        if pattern in text:
+            text = text.split(pattern)[0]
+            break
+    
+    # Step 4: Additional cleanup - remove any remaining EOS-like tokens
+    patterns_to_remove = [
+        r'\[/s\].*$',
+        r'</INST>.*$',
+        r'\[/INST\].*$',
+        r'</p>.*$',
+        r'\[/p\].*$'
+    ]
+    
+    for pattern in patterns_to_remove:
+        text = re.sub(pattern, '', text, flags=re.DOTALL)
+    
+    # Step 5: Clean up any trailing whitespace and normalize spacing
+    text = re.sub(r'\n\s*\n\s*\n+', '\n\n', text)  # Remove excessive newlines
+    text = text.strip()
+    
+    return text
+
+
+def load_and_test_model(model_path, device, output_path, test_json_path, g_json_path):
     """
     Load a fine-tuned model and test it with sample prompts
     
@@ -759,10 +802,6 @@ def load_and_test_model(model_path, device, output_path=None):
     pipe = pipeline("text-generation",model=model,tokenizer=tokenizer)
     
     # Test prompts
-    output_dir = "./QA_Results"
-    test_json_path = "./QA_Data/multi_sample_qa_info_k100_bm100_te.json"
-    # g_json_path = "./QA_Results/galax_results_20250425_033734.json"
-    g_json_path = "./QA_Results-1/galax_results_20250426_151932.json"
     test_samples = load_test_prompts_from_json(test_json_path, g_json_path)
     # Generate output path if not provided
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -802,6 +841,12 @@ def load_and_test_model(model_path, device, output_path=None):
             original_reasoning = original_reasoning.split("</p>")[0]
         elif "</INST>" in original_reasoning:
             original_reasoning = original_reasoning.split("</INST>")[0]
+        elif "[/Output]" in initial_reasoning:
+            initial_reasoning = initial_reasoning.split("[/Output]")[0]
+        elif "[/Instruction]" in initial_reasoning:
+            initial_reasoning = initial_reasoning.split("[/Instruction]")[0]
+        elif "[/INST]" in original_reasoning:
+            original_reasoning = original_reasoning.split("[/INST]")[0]
         # Also print to console for immediate viewing
         print(f"Original reasoning for sample {sample_id}:\n{original_reasoning[:4000]}...\n")
         # Extract proteins from original_reasoning
@@ -824,6 +869,12 @@ def load_and_test_model(model_path, device, output_path=None):
             refined_reasoning = refined_reasoning.split("</p>")[0]
         elif "</INST>" in refined_reasoning:
             refined_reasoning = refined_reasoning.split("</INST>")[0]
+        elif "[/Output]" in initial_reasoning:
+            initial_reasoning = initial_reasoning.split("[/Output]")[0]
+        elif "[/Instruction]" in initial_reasoning:
+            initial_reasoning = initial_reasoning.split("[/Instruction]")[0]
+        elif "[/INST]" in refined_reasoning:
+            refined_reasoning = refined_reasoning.split("[/INST]")[0]
         # Also print to console for immediate viewing
         print(f"Refined reasoning for sample {sample_id}:\n{refined_reasoning[:4000]}...\n")
         # Extract ground truth protein list
@@ -899,13 +950,27 @@ if __name__ == "__main__":
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
     
     # # Run finetuning with the generated timestamp
-    # finetune(args, device, run_timestamp)
+    # base_model_name = './checkpoints/TargetQA-20250707_051359/checkpoint-335'
+    # json_path = "./data/TargetQA/target_qa_k10_bm100_tr.json"
+    # g_json_path = './TargetQA_Results/galax_results_20250901_030348.json' # llm_1st and llm_2nd are in galax_json_path # used (+-)
+    # # g_json_path = './TargetQA_Results/galax_results_20250901_030752.json' # llm_1st and llm_2nd are in galax_json_path # used
+    # # g_json_path = './TargetQA_Results/galax_results_20250901_140224.json' # llm_1st and llm_2nd are in galax_json_path # used (+-)
+    # finetune(args, device, base_model_name, json_path, g_json_path, run_timestamp)
 
     # Model path to load
-    # model_path = './Checkpoints/finetuned_model/CRISPR-2nd-QA-20250425_181451/checkpoint-57'
-    model_path = './Checkpoints/finetuned_model/CRISPR-2nd-QA-20250428_034450/checkpoint-57'
+
+    # model_path = './checkpoints/language_foundation/Target-2nd-QA-20250821_124852/checkpoint-335'
+    model_path = './checkpoints/language_foundation/Target-2nd-QA-20250905_135618/checkpoint-335'
+    # model_path = './checkpoints/language_foundation/Target-2nd-QA-20250905_140101/checkpoint-335'
+    # model_path = './checkpoints/language_foundation/Target-2nd-QA-20250905_141924/checkpoint-335'
+    # g_json_path = "./TargetQA_Results/galax_results_20250815_120715.json"
+    g_json_path = "./TargetQA_Results/galax_results_20250901_030348.json"
+    # g_json_path = "./TargetQA_Results/galax_results_20250901_030752.json"
+    # g_json_path = "./TargetQA_Results/galax_results_20250901_140224.json"
     # Load and test the model
-    model, tokenizer, pipe, results_dict = load_and_test_model(model_path, device)
+    output_dir = "./TargetQA_Results"
+    test_json_path = "./data/TargetQA/target_qa_k10_bm100_te.json"
+    model, tokenizer, pipe, results_dict = load_and_test_model(model_path, device, output_dir, test_json_path, g_json_path)
     
     # # Interactive mode
     # print("\n\nEntering interactive mode. Type 'exit' to quit.")

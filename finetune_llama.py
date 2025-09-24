@@ -397,9 +397,9 @@ def finetune(args, device, run_timestamp):
         num_train_epochs=5,
         per_device_train_batch_size=1,
         gradient_accumulation_steps=2,
-        save_steps=335,
+        save_steps=67,
         save_strategy="steps",
-        eval_steps=335,
+        eval_steps=67,
         logging_steps=1,  # Log every step
         learning_rate=1e-5,
         weight_decay=0.0,

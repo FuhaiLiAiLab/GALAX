@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import copy
 import torch
@@ -11,9 +12,9 @@ import networkx as nx
 
 from pathlib import Path
 from config import arg_parse
+from utils import select_best_gpu_device
 
 from motasg_explainer import (
-    get_gpu_with_max_free_memory,
     load_combined_model,
     build_pretrain_model, 
     build_model, 
@@ -37,78 +38,6 @@ import requests
 import json
 from collections import defaultdict
 
-
-def select_best_gpu_device():
-    """
-    Select the best available GPU device with the most free memory.
-    Falls back to CPU if no GPU is available or if there are issues.
-    
-    Returns:
-        str: Device string (e.g., 'cuda:0', 'cuda:1', or 'cpu')
-    """
-    # Check if CUDA is available
-    if not torch.cuda.is_available():
-        print("CUDA is not available. Using CPU.")
-        return 'cpu'
-    
-    # Try to get GPU with max free memory from existing function
-    try:
-        device = get_gpu_with_max_free_memory()
-        print(f"Initial device selection: {device}")
-    except (RuntimeError, IndexError) as e:
-        print(f"Error in GPU selection: {e}")
-        print("Falling back to CPU")
-        return 'cpu'
-    
-    # Validate device selection
-    if device.startswith('cuda'):
-        device_id = int(device.split(':')[1])
-        available_devices = torch.cuda.device_count()
-        
-        if device_id >= available_devices:
-            print(f"Error: Device {device} not available. Available devices: {available_devices}")
-            print(f"Available device IDs: {list(range(available_devices))}")
-            
-            # Find the GPU with maximum free memory among available devices
-            max_free_memory = 0
-            best_device_id = 0
-            
-            for i in range(available_devices):
-                try:
-                    torch.cuda.set_device(i)
-                    free_memory = torch.cuda.get_device_properties(i).total_memory - torch.cuda.memory_allocated(i)
-                    print(f"Device {i}: {free_memory / (1024**3):.2f} GB free memory")
-                    
-                    if free_memory > max_free_memory:
-                        max_free_memory = free_memory
-                        best_device_id = i
-                except Exception as e:
-                    print(f"Error checking device {i}: {e}")
-                    continue
-            
-            device = f'cuda:{best_device_id}'
-            device_id = best_device_id
-            print(f"Selected device with most free memory: {device} ({max_free_memory / (1024**3):.2f} GB free)")
-        
-        # Set the device
-        try:
-            torch.cuda.set_device(device_id)
-            print(f"Set CUDA device to: {device_id}")
-        except Exception as e:
-            print(f"Error setting CUDA device {device_id}: {e}")
-            return 'cpu'
-        
-        # Verify the device is working
-        try:
-            test_tensor = torch.tensor([1.0], device=device)
-            print(f"✅ Device {device} is working correctly")
-            return device
-        except Exception as e:
-            print(f"❌ Device {device} test failed: {e}")
-            print("Falling back to CPU")
-            return 'cpu'
-    
-    return device
 
 def extract_proteins_with_chatgpt(text, api_key, api_url="https://api.openai.com/v1/chat/completions"):
     """
@@ -519,8 +448,8 @@ def train(args, device):
     run_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     
     # Check for existing results file to resume from
-    existing_results_file = "./TargetQA_Results/galax_results_20250707_134744.json"
-    # existing_results_file = None
+    # existing_results_file = "./TargetQA_Results/galax_results_20250828_222614.json"
+    existing_results_file = None
     processed_samples = set()
 
     if existing_results_file is not None and os.path.exists(existing_results_file):
@@ -530,8 +459,10 @@ def train(args, device):
                 processed_samples = set(existing_results.keys())
                 print(f"Found existing results file with {len(processed_samples)} processed samples")
                 print(f"Processed samples: {sorted(processed_samples)}")
-                # Use the existing timestamp to continue appending to the same file
-                run_timestamp = "20250707_134744"  # Use the existing timestamp
+                # Extract timestamp from the filename
+                timestamp_match = re.search(r'galax_results_(\d{8}_\d{6})\.json', existing_results_file)
+                run_timestamp = timestamp_match.group(1)
+                print(f"Extracted timestamp from existing file: {run_timestamp}")
         except (json.JSONDecodeError, FileNotFoundError):
             print("Could not load existing results file, starting fresh")
 
@@ -555,6 +486,7 @@ def train(args, device):
     
     # Load LLM model
     model_name = './checkpoints/TargetQA-20250707_051359/checkpoint-335'
+    # model_name = './checkpoints/TargetQA-20250707_051359/checkpoint-150'
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     llm_model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.float16 if device == "cuda" else torch.float32)
     llm_model = llm_model.to(device)
@@ -608,23 +540,19 @@ def train(args, device):
         print("\n")
         print("\n")
         initial_reasoning = run_llm(llm_pipeline, prompt1)
-        # Truncate the initial reasoning after symbol '</s>' or '</p>'
-        if '</s>' in initial_reasoning:
-            initial_reasoning = initial_reasoning.split('</s>')[0]
-        elif '</p>' in initial_reasoning:
-            initial_reasoning = initial_reasoning.split('</p>')[0]
-        elif '</INST>' in initial_reasoning:
-            initial_reasoning = initial_reasoning.split('</INST>')[0]
-        elif '[/Output]' in initial_reasoning:
-            initial_reasoning = initial_reasoning.split('[/Output]')[0]
-        # Remove the part after the second '[/Instruction]'
-        instruction_count = initial_reasoning.count('[/Instruction]')
-        if instruction_count >= 2:
-            parts = initial_reasoning.split('[/Instruction]')
-            initial_reasoning = '[/Instruction]'.join(parts[:2])
-        elif instruction_count == 1:
-            # If only one [/Instruction], keep everything up to it
-            initial_reasoning = initial_reasoning.split('[/Instruction]')[0]
+        # Truncate the initial reasoning after symbol "</s>" or "</p>"
+        if "</s>" in initial_reasoning:
+            initial_reasoning = initial_reasoning.split("</s>")[0]
+        elif "</p>" in initial_reasoning:
+            initial_reasoning = initial_reasoning.split("</p>")[0]
+        elif "</INST>" in initial_reasoning:
+            initial_reasoning = initial_reasoning.split("</INST>")[0]
+        elif "[/Output]" in initial_reasoning:
+            initial_reasoning = initial_reasoning.split("[/Output]")[0]
+        elif "[/Instruction]" in initial_reasoning:
+            initial_reasoning = initial_reasoning.split("[/Instruction]")[0]
+        elif "[/INST]]" in initial_reasoning:
+            initial_reasoning = initial_reasoning.split("[/INST]]")[0]
         print("Step 1 - Initial LLM Reasoning:\n", initial_reasoning)
         print("\n")
         # ********************************** Convert LLM Protein to Graph Node ********************************
@@ -959,21 +887,19 @@ def train(args, device):
                                                    graph_context=edge_text_descriptions, #  (can be replaced with additional_edge_text_descriptions)
                                                    graph_proteins=completed_best_sampled_graph_hgnc_list) # best_conn_completed_graph_hgnc_list
         refined_reasoning = run_llm(llm_pipeline, prompt2)
-        # Truncate the refined reasoning after symbol '</s>'
+        # Truncate the refined reasoning after symbol "</s>"
         if "</s>" in refined_reasoning: 
             refined_reasoning = refined_reasoning.split("</s>")[0]
         elif "</p>" in refined_reasoning:
             refined_reasoning = refined_reasoning.split("</p>")[0]
         elif "</INST>" in refined_reasoning:
             refined_reasoning = refined_reasoning.split("</INST>")[0]
-        # Remove the part after the second '[/Instruction]'
-        instruction_count = initial_reasoning.count('[/Instruction]')
-        if instruction_count >= 2:
-            parts = initial_reasoning.split('[/Instruction]')
-            initial_reasoning = '[/Instruction]'.join(parts[:2])
-        elif instruction_count == 1:
-            # If only one [/Instruction], keep everything up to it
-            initial_reasoning = initial_reasoning.split('[/Instruction]')[0]
+        elif "[/Output]" in refined_reasoning:
+            refined_reasoning = refined_reasoning.split("[/Output]")[0]
+        elif "[/Instruction]" in refined_reasoning:
+            refined_reasoning = refined_reasoning.split("[/Instruction]")[0]
+        elif "[/INST]" in refined_reasoning:
+            refined_reasoning = refined_reasoning.split("[/INST]")[0]
         print("Step 2 - Refined LLM Reasoning:\n", refined_reasoning)
         # ********************************** Convert LLM Protein to Protein Node ********************************
         if ner_model_type == "GLiNER":
@@ -1057,6 +983,66 @@ if __name__ == "__main__":
         print("Using CPU (forced by args)")
     else:
         device = select_best_gpu_device()
+
+    import os
+    # Add debugging flags at the top of your script
+    os.environ["TORCH_USE_CUDA_DSA"] = "1"
+    os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
+    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+    
+    # Force check for cuda:1 in MIG environment
+    preferred_device = "cuda:1"
+    cuda_visible = os.environ.get('CUDA_VISIBLE_DEVICES', '')
+    is_mig_environment = 'MIG-' in cuda_visible
+    
+    if is_mig_environment:
+        print(f"🔧 MIG environment detected: {cuda_visible}")
+        # Check how many MIG devices are available
+        mig_devices = cuda_visible.split(',')
+        print(f"Available MIG devices: {len(mig_devices)}")
+        
+        if torch.cuda.device_count() > 1:
+            try:
+                # Test if cuda:1 exists and is accessible
+                torch.cuda.set_device(1)
+                test_tensor = torch.tensor([1.0], device=preferred_device)
+                props = torch.cuda.get_device_properties(1)
+                allocated = torch.cuda.memory_allocated(1) / (1024**3)
+                total = props.total_memory / (1024**3)
+                free = total - allocated
+                
+                print(f"✅ MIG Device cuda:1 found and accessible:")
+                print(f"  Name: {props.name}")
+                print(f"  Total Memory: {total:.1f} GB")
+                print(f"  Available Memory: {free:.1f} GB")
+                
+                del test_tensor
+                torch.cuda.empty_cache()
+                device = preferred_device
+                print(f"Using forced MIG device: {device}")
+                
+            except Exception as e:
+                print(f"❌ Cannot access cuda:1 in MIG environment: {e}")
+                print(f"Available devices: {[f'cuda:{i}' for i in range(torch.cuda.device_count())]}")
+                print(f"Falling back to detected device: {device}")
+        else:
+            print(f"⚠️  Only {torch.cuda.device_count()} MIG device(s) available")
+            print(f"Cannot use cuda:1, using detected device: {device}")
+    else:
+        # Non-MIG environment - normal cuda:1 check
+        if torch.cuda.device_count() > 1:
+            try:
+                torch.cuda.set_device(1)
+                test_tensor = torch.tensor([1.0], device=preferred_device)
+                del test_tensor
+                device = preferred_device
+                print(f"✅ Using preferred device: {device}")
+            except Exception as e:
+                print(f"❌ Cannot use {preferred_device}: {e}")
+                print(f"Using detected device: {device}")
+        else:
+            print(f"⚠️  Only {torch.cuda.device_count()} GPU(s) available")
+            print(f"Using detected device: {device}")
     
     print(f"Final device selection: {device}")
 

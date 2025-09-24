@@ -16,9 +16,6 @@ def calculate_average_metrics(data):
     """
     # Initialize counters for each metric and model
     metrics = {
-        'm2t_bm': {'precision': 0, 'recall': 0, 'f1_score': 0,
-                   'overlap_count': 0, 'jaccard': 0, 
-                   'precision@5': 0, 'precision@10': 0}, 
         'gat': {'precision': 0, 'recall': 0, 'f1_score': 0,
                      'overlap_count': 0, 'jaccard': 0, 
                      'precision@5': 0, 'precision@10': 0},
@@ -137,9 +134,7 @@ def concatenate_json_files(json_paths, test_samples):
             
             # Determine model type from file path more precisely using exact pattern matching
             model_type = None
-            if 'm2t_target_assignments' in json_path:
-                model_type = 'm2t_bm'
-            elif 'motasg_gat_results' in json_path:
+            if 'motasg_gat_results' in json_path:
                 model_type = 'gat'
             elif 'plain_omicskg_results' in json_path:
                 model_type = 'plain_omicskg'
@@ -196,12 +191,6 @@ def concatenate_json_files(json_paths, test_samples):
                                 combined_data[sample_id]['evaluation_results']['llm_2nd_2nd'] = sample_data['evaluation_results']['llm_2nd_2nd']
                             else:
                                 print(f"⚠️ Warning: No llm_2nd_2nd found for {sample_id} in {json_path}")
-                    elif 'm2t' in model_type:
-                        if model_type == 'm2t_bm':
-                            if 'm2t_bm' in sample_data['evaluation_results']:
-                                combined_data[sample_id]['evaluation_results']['m2t_bm'] = sample_data['evaluation_results']['m2t_bm']
-                            else:
-                                print(f"⚠️ Warning: No m2t_bm found for {sample_id} in {json_path}")
                     elif 'gat' in model_type:
                         if 'gat' in sample_data['evaluation_results']:
                             combined_data[sample_id]['evaluation_results']['gat'] = sample_data['evaluation_results']['gat']
@@ -314,9 +303,6 @@ def sep_eval_test_data(json_data):
     
     # Initialize metrics structure for disease metrics
     metrics_template = {
-        'm2t_bm': {'precision': 0, 'recall': 0, 'f1_score': 0,
-                     'overlap_count': 0, 'jaccard': 0, 
-                     'precision@5': 0, 'precision@10': 0},
         'gat': {'precision': 0, 'recall': 0, 'f1_score': 0,
                         'overlap_count': 0, 'jaccard': 0, 
                         'precision@5': 0, 'precision@10': 0},
@@ -464,7 +450,6 @@ def generate_disease_comparison_table(disease_data):
     
     # Define model types in original order
     model_types = [
-        'm2t_bm',
         'gat',
         'plain_omics',
         'plain_omicskg',
@@ -583,20 +568,24 @@ def generate_disease_comparison_table(disease_data):
 
 if __name__ == '__main__':
     # Load the JSON data from file QA-Results
-    m2t_json_path = './TargetQA_Results/m2t_target_assignments.json' # m2t_bm
     motasg_gat_json_path = './TargetQA_Results/motasg_gat_results.json' # gat
-    plain_omics_json_path = './TargetQA_Results/plain_omics_results_{}.json' # llm_1st
-    plain_omicskg_json_path = './TargetQA_Results/plain_omicskg_results_{}.json' # llm_1st
-    bmgc_omics_json_path = './TargetQA_Results/bmgc_omics_results_{}.json' # llm_1st
-    bmgc_omicskg_json_path = './TargetQA_Results/bmgc_omicskg_results_{}.json' # llm_1st
-    qallm_omics_json_path = './TargetQA_Results/qallm_omics_results_{}.json' # llm_1st
-    qallm_omicskg_json_path = './TargetQA_Results/qallm_omicskg_results_{}.json' # llm_1st
-    gretriever_json_path = './TargetQA_Results/gretriever_results_{}.json' # llm_1st
-    galax_json_path = './TargetQA_Results/galax_results_20250707_134744.json' # llm_1st and llm_2nd are in galax_json_path
-    galax_2nd_add_1st_json_path = './TargetQA_Results/galax_2nd_step_results_add1st_{}.json' # llm_2nd_1st and llm_2nd_2nd are in galax_2nd_add_1st_json_path
+    plain_omics_json_path = './TargetQA_Results/plain_omics_results_20250820_145320.json' # llm_1st
+    plain_omicskg_json_path = './TargetQA_Results/plain_omicskg_results_20250820_155113.json' # llm_1st
+    bmgc_omics_json_path = './TargetQA_Results/bmgc_omics_results_20250820_171210.json' # llm_1st
+    bmgc_omicskg_json_path = './TargetQA_Results/bmgc_omicskg_results_20250820_172236.json' # llm_1st
+    qallm_omics_json_path = './TargetQA_Results/qallm_omics_results_20250820_181011.json' # llm_1st
+    qallm_omicskg_json_path = './TargetQA_Results/qallm_omicskg_results_20250820_180421.json' # llm_1st
+    # gretriever_json_path = './TargetQA_Results/gretriever_results_20250907_000054.json' # llm_1st
+    gretriever_json_path = './TargetQA_Results/gretriever_results_20250907_022450.json' # llm_1st
+    
+    # galax_json_path = './TargetQA_Results/galax_results_20250901_030348.json' # llm_1st and llm_2nd are in galax_json_path # used (+-)
+    galax_json_path = './TargetQA_Results/galax_results_20250901_030752.json' # llm_1st and llm_2nd are in galax_json_path # used
+    # galax_json_path = './TargetQA_Results/galax_results_20250901_140224.json' # llm_1st and llm_2nd are in galax_json_path # used (+-)
+    # galax_2nd_add_1st_json_path = './TargetQA_Results/galax_2nd_step_results_add1st_20250822_221447.json' # llm_2nd_1st and llm_2nd_2nd are in galax_2nd_add_1st_json_path # used
+    # galax_2nd_add_1st_json_path = './TargetQA_Results/galax_2nd_step_results_add1st_20250906_024403.json' # llm_2nd_1st and llm_2nd_2nd are in galax_2nd_add_1st_json_path # kind of used
+    galax_2nd_add_1st_json_path = './TargetQA_Results/galax_2nd_step_results_add1st_20250906_030856.json' # llm_2nd_1st and llm_2nd_2nd are in galax_2nd_add_1st_json_path # kind of used
 
     json_paths = [
-        m2t_json_path,
         motasg_gat_json_path,
         plain_omics_json_path,
         plain_omicskg_json_path,

@@ -36,58 +36,6 @@ from torch_geometric.nn import (
 from config import arg_parse
 
 
-def get_gpu_with_max_free_memory():
-    """
-    Returns the GPU device ID with the most available memory.
-    Returns 'cpu' if no CUDA devices are available.
-    """
-    if not torch.cuda.is_available():
-        return 'cpu'
-    
-    try:
-        # Try to use nvidia-smi to get memory info
-        import subprocess
-        import re
-        
-        # Run nvidia-smi to get memory usage info
-        result = subprocess.check_output(['nvidia-smi', '--query-gpu=memory.free', '--format=csv,nounits,noheader'], 
-                                        encoding='utf-8')
-        # Parse the output to get free memory values
-        free_memory = [int(x) for x in result.strip().split('\n')]
-        
-        # Get the GPU with maximum free memory
-        max_free_device_id = free_memory.index(max(free_memory))
-        print(f"Selected GPU {max_free_device_id} with {max(free_memory)} MB free memory")
-        return f'cuda:{max_free_device_id}'
-    
-    except (subprocess.CalledProcessError, FileNotFoundError, ImportError) as e:
-        # If nvidia-smi fails, try to use torch's built-in function (less accurate)
-        print(f"Warning: nvidia-smi failed ({e}). Using first available GPU.")
-        try:
-            # Get device count and find one with most memory
-            device_count = torch.cuda.device_count()
-            if device_count == 0:
-                return 'cpu'
-            elif device_count == 1:
-                return 'cuda:0'
-            
-            # Try to find the GPU with most free memory
-            max_free = 0
-            max_device = 0
-            for device_id in range(device_count):
-                torch.cuda.set_device(device_id)
-                torch.cuda.empty_cache()
-                free_mem = torch.cuda.memory_reserved(device_id) - torch.cuda.memory_allocated(device_id)
-                if free_mem > max_free:
-                    max_free = free_mem
-                    max_device = device_id
-            
-            print(f"Selected GPU {max_device} based on torch memory stats")
-            return f'cuda:{max_device}'
-        except:
-            # Fall back to the first GPU if all else fails
-            return 'cuda:0'
-
 def load_combined_model(args, device):
     """
     Load both pretrain_model and downstream model from a combined checkpoint.
@@ -1341,12 +1289,12 @@ def convert_edges_to_hgnc_symbols(edge_tensor, index_hgnc_dict, index_nodeid_dic
         
         # First try to get HGNC symbol
         source_hgnc = index_hgnc_dict.get(source_idx_val)
-        if source_hgnc is None:
+        if source_hgnc == []:
             # If not in HGNC dict, try to get the node ID
             source_hgnc = index_nodeid_dict.get(source_idx_val, f"Unknown-{source_idx_val}")
         
         target_hgnc = index_hgnc_dict.get(target_idx_val)
-        if target_hgnc is None:
+        if target_hgnc == []:
             # If not in HGNC dict, try to get the node ID
             target_hgnc = index_nodeid_dict.get(target_idx_val, f"Unknown-{target_idx_val}")
         

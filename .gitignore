@@ -12,6 +12,7 @@
 /data/BioMedGraphica-Conn/*
 /data/BMG_emb/*
 /data/process_data/*
+/data/TargetQA-upload.py
 
 # processed data
 /data/pretrain_plain_data/*
@@ -27,8 +28,20 @@
 /MOTASG_Results/*
 /TargetQA_Results/*
 
+# model analysis
+**MOTASG_Analysis**
+
 # wandb
 /wandb/*
 
+# eval
+**pan_eval**
+
 # Explainable Figures
 /Plots/*
+
+# Baseline models
+**omics**
+**omicskg**
+**g-Retriever**
+**motasg**

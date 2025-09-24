@@ -2,7 +2,7 @@
 
 This repository is the official implementation of [GALAX](). 
 
-![Figure1](./figures/Figure2.png)
+![Figure1](./Figures/Figure2.png)
 
 ## Requirements
 
@@ -75,7 +75,8 @@ python GALAX.py
 
 Then finetune the 2nd stage / final answering with 2 NVIDIA H100 (80G) GPUs by
 ```
-accelerate launch --multi_gpu --num_processes=4 --mixed_precision=bf16 finetune_llama_2nd_step.py
+<!-- accelerate launch --multi_gpu --num_processes=2 --mixed_precision=bf16 finetune_llama_2nd_step.py -->
+accelerate launch --multi_gpu --num_processes=2 --mixed_precision=bf16 --main_process_port=0 finetune_llama_2nd_step.py
 ```
 
 
