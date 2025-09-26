@@ -154,7 +154,7 @@ This project is licensed under the [MIT License](LICENSE), which permits reuse, 
 
 ### 📑 DepMap Data Usage
 
-This dataset is derived from the **Broad Institute’s Cancer Dependency Map (DepMap)** and is released **strictly for non-commercial, internal research, and academic use**, consistent with [DepMap’s Terms of Use](https://depmap.org/portal/termsOfUse).  
+This dataset is derived from the **Broad Institute’s Cancer Dependency Map (DepMap)** and is released **strictly for non-commercial, internal research, and academic use**, consistent with [DepMap’s Terms of Use](https://depmap.org/portal).  
 
 - We do **not** redistribute original DepMap files. Instead, we provide **derived, non-identifiable annotations** and **processing scripts/pointers** so that users can obtain the source data directly from DepMap after accepting its terms.  
 - The dataset is **not intended for clinical applications** and must **not** be used for any **Commercial Use** (e.g., direct sale, incorporation into a product, or training/developing/enhancing ML/AI models beyond internal academic research).  
