@@ -85,14 +85,15 @@ accelerate launch --multi_gpu --num_processes=4 --mixed_precision=bf16 finetune_
 
 ## 🌐 Pretrain the graph foundation model
 ### 🔗 Capturing the edge mechanism
-Run the pretraining model
-```
+To learn topological patterns and interaction mechanisms, run:  
+
+```bash
 python motasg_pretrain.py
 ```
 
 ### 🧪 Pretrain the disease status classification
-Run the classification pretraining model
-```
+To train the graph encoder for disease type classification, run:
+```bash
 python motasg_train.py
 ```
 
