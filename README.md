@@ -35,10 +35,11 @@
 
 ---
 
-This repository contains the **official implementation of [GALAX](https://arxiv.org/abs/2509.20935)**,  
-
 ![GALAX Architecture](./Figures/Figure3.png)
 
+This repository contains the **official implementation of [GALAX](https://arxiv.org/abs/2509.20935)**.  
+- 📊 Dataset: [Target-QA on Hugging Face](https://huggingface.co/datasets/FuhaiLiAiLab/Target-QA)  
+- 🤖 Model Parameters: [GALAX on Hugging Face](https://huggingface.co/FuhaiLiAiLab/GALAX)  
 
 ## ⚙️ Requirements
 
@@ -77,6 +78,10 @@ Pretrain the llama3-8B-Instruct with 2 NVIDIA H100 (80G) GPUs by
 ```
 accelerate launch --num_processes=4 pretrain_llama_fa.py
 ```
+Then, pretrain the initial answering with 2 NVIDIA H100 (80G) GPUs by
+```
+accelerate launch --multi_gpu --num_processes=4 --mixed_precision=bf16 finetune_llama.py
+```
 
 ## 🌐 Pretrain the graph foundation model
 ### 🔗 Capturing the edge mechanism
@@ -93,12 +98,7 @@ python motasg_train.py
 
 ## 🚀 Training the GALAX
 ### ⚡ Run the model
-Pretrain the initial answering with 2 NVIDIA H100 (80G) GPUs by
-```
-accelerate launch --multi_gpu --num_processes=4 --mixed_precision=bf16 finetune_llama.py
-```
-
-Then, run the GALAX reasoning with explainable subgraph
+Run the GALAX reasoning with explainable subgraph
 ```
 python GALAX.py
 ```
