@@ -117,7 +117,6 @@ python pan_sep_eval.py
 
 Our model achieves the following performance on :
 
-<div style="font-size: 60%;">
 **Table 1. Performance of models across datasets and metrics**  
 | Model                    | Overall Precision ↑ | Overall Recall ↑ | LUAD Precision ↑ | LUAD Recall ↑ | BRCA Precision ↑ | BRCA Recall ↑ |
 |--------------------------|--------------------:|-----------------:|-----------------:|--------------:|-----------------:|--------------:|
@@ -147,7 +146,6 @@ Our model achieves the following performance on :
 | L3-FT(QA) + Omics + KG  | 0.8529 ± 0.0153 | 0.8794 ± 0.0114 | 0.8048 ± 0.0541 | 0.7905 ± 0.0436 | 0.8222 ± 0.0347 | 0.8778 ± 0.0192 |
 | G-Retriever + pre-GAT   | 0.8550 ± 0.0046 | 0.8804 ± 0.0037 | 0.8524 ± 0.0165 | 0.8857 ± 0.0000 | **0.8667 ± 0.0000** | 0.8667 ± 0.0000 |
 | GALAX                   | **0.8815 ± 0.0033** | **0.9249 ± 0.0048** | **0.8810 ± 0.0082** | **0.9238 ± 0.0436** | 0.8500 ± 0.0441 | **0.8889 ± 0.0839** |
-</div>
 
 ## 📋 License and Contributions
 
