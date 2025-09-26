@@ -24,7 +24,7 @@
 <div align="center" style="line-height: 1;">
   <!-- arXiv -->
   <a href="https://arxiv.org/abs/2509.20935" target="_blank" style="margin: 2px;">
-    <img alt="arXiv" src="https://img.shields.io/badge/arXiv-2509.20935-b31b1b?logo=arxiv&logoColor=white" style="display: inline-block; vertical-align: middle;"/>
+    <img alt="arXiv" src="https://img.shields.io/badge/arXiv-GALAX%20Paper-b31b1b?logo=arxiv&logoColor=white" style="display: inline-block; vertical-align: middle;"/>
   </a>
 
   <!-- License -->
