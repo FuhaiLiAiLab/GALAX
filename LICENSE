@@ -29,7 +29,7 @@ SOFTWARE.
 The **Target-QA dataset** is derived from the **Broad Institute’s Cancer Dependency Map (DepMap)**.  
 It is **not** covered by the MIT License.  
 
-- The dataset is released **strictly for non-commercial, internal research and academic use**, in accordance with the official [DepMap Terms of Use](https://depmap.org/portal/termsOfUse).  
+- The dataset is released **strictly for non-commercial, internal research and academic use**, in accordance with the official [DepMap Terms of Use](https://depmap.org/portal).  
 - We **do not redistribute original DepMap files**. Instead, we provide **derived, non-identifiable annotations** and **processing scripts** so that users can download the source data directly from DepMap after accepting its terms.  
 - The dataset must **not** be used for clinical or diagnostic applications, or for any **Commercial Use** (e.g., direct sale, incorporation into a product, or training/developing/enhancing ML/AI models beyond internal academic research).  
 - Attribution to **DepMap** and the **Broad Institute** is required.  
