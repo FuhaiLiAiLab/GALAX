@@ -1,6 +1,47 @@
 # GALAX: Graph-Augmented Language Model for Explainable Reinforcement-Guided Subgraph Reasoning in Precision Medicine: 
 
-This repository is the official implementation of [GALAX](). 
+This repository contains the **official implementation of [GALAX](https://arxiv.org/abs/2509.20935)**,  
+
+<div align="center">
+  <img src="./GALAX-logo.png" width="40%" alt="GALAX" />
+</div>
+
+<div align="center" style="line-height: 1;">
+  <!-- GitHub -->
+  <a href="https://github.com/FuhaiLiAiLab/GALAX" target="_blank" style="margin: 2px;">
+    <img alt="GitHub" src="https://img.shields.io/badge/GitHub-GALAX%20Code-181717?logo=github&logoColor=white" style="display: inline-block; vertical-align: middle;"/>
+  </a>
+
+  <!-- Hugging Face Model -->
+  <a href="https://huggingface.co/FuhaiLiAiLab/GALAX" target="_blank" style="margin: 2px;">
+    <img alt="Hugging Face Model" src="https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-GALAX%20Model-ffc107?color=ffc107&logoColor=white" style="display: inline-block; vertical-align: middle;"/>
+  </a>
+
+  <!-- Hugging Face Dataset -->
+  <a href="https://huggingface.co/datasets/FuhaiLiAiLab/Target-QA" target="_blank" style="margin: 2px;">
+    <img alt="Hugging Face Dataset" src="https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Target--QA%20Dataset-ff6f61?color=ffc107&logoColor=white" style="display: inline-block; vertical-align: middle;"/>
+  </a>
+</div>
+
+<div align="center" style="line-height: 1;">
+  <!-- arXiv -->
+  <a href="https://arxiv.org/abs/2509.20935" target="_blank" style="margin: 2px;">
+    <img alt="arXiv" src="https://img.shields.io/badge/arXiv-2509.20935-b31b1b?logo=arxiv&logoColor=white" style="display: inline-block; vertical-align: middle;"/>
+  </a>
+
+  <!-- License -->
+  <a href="LICENSE" style="margin: 2px;">
+    <img alt="License" src="https://img.shields.io/badge/License-MIT-0a4d92?logo=open-source-initiative&logoColor=white" style="display: inline-block; vertical-align: middle;"/>
+  </a>
+</div>
+
+---
+
+
+
+![GALAX Architecture](./Figures/Figure3.png)
+
+---
 
 ![Figure1](./Figures/Figure3.png)
 
