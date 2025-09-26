@@ -1,9 +1,7 @@
-# GALAX: Graph-Augmented Language Model for Explainable Reinforcement-Guided Subgraph Reasoning in Precision Medicine: 
-
-This repository contains the **official implementation of [GALAX](https://arxiv.org/abs/2509.20935)**,  
+# GALAX: Graph-Augmented Language Model for Explainable Reinforcement-Guided Subgraph Reasoning in Precision Medicine
 
 <div align="center">
-  <img src="./GALAX-logo.png" width="40%" alt="GALAX" />
+  <img src="./Figures/GALAX-logo.png" width="40%" alt="GALAX" />
 </div>
 
 <div align="center" style="line-height: 1;">
@@ -37,15 +35,12 @@ This repository contains the **official implementation of [GALAX](https://arxiv.
 
 ---
 
-
+This repository contains the **official implementation of [GALAX](https://arxiv.org/abs/2509.20935)**,  
 
 ![GALAX Architecture](./Figures/Figure3.png)
 
----
 
-![Figure1](./Figures/Figure3.png)
-
-## Requirements
+## ⚙️ Requirements
 
 To install requirements:
 
@@ -53,12 +48,12 @@ To install requirements:
 pip install -r requirements.txt
 ```
 
-## 1. Download BioMedical Knowledge Graph
+## 📥 Download BioMedical Knowledge Graph
 Check the website at [BioMedGraphica](https://github.com/FuhaiLiAiLab/BioMedGraphica) and download it to the path './data'
 
 Then, run the code in each folder with entity and relation, with acquiring entities and relations.
 
-## 2. Collect the DepMap data
+## 🧬 Collect the DepMap data
 Check the website at [DepMap](https://depmap.org/portal/data_page/?tab=overview) and download following links:
 
 | **File Type**           | **File Name**                          | **Download Site**                                                                 |
@@ -74,30 +69,30 @@ Check the website at [DepMap](https://depmap.org/portal/data_page/?tab=overview)
 
 And put them under the folder ./data/raw_data
 
-## 3. Process the data
+## 🛠️ Process the data
 Just run the ./BMG/process.ipynb to get the integrated multi-omics data and Target-QA data with 'multi_sample_qa_info_k{k}_bm{top_bm}.json' (e.g., k=10, top_bm=100). And run the ./BMG/medtune.ipynb to get the 'mixed_description.jsonl'.
 
-## 4. Pretrain the language model
+## 🧑‍💻 Pretrain the language model
 Pretrain the llama3-8B-Instruct with 2 NVIDIA H100 (80G) GPUs by
 ```
 accelerate launch --num_processes=4 pretrain_llama_fa.py
 ```
 
-## 5. Pretrain the graph foundation model
-### 5.1 Capturing the edge mechanism
+## 🌐 Pretrain the graph foundation model
+### 🔗 Capturing the edge mechanism
 Run the pretraining model
 ```
 python motasg_pretrain.py
 ```
 
-### 5.2 Pretrain the disease status classification
+### 🧪 Pretrain the disease status classification
 Run the classification pretraining model
 ```
 python motasg_train.py
 ```
 
-## 6. Training the GALAX
-### 6.1 Run the model
+## 🚀 Training the GALAX
+### ⚡ Run the model
 Pretrain the initial answering with 2 NVIDIA H100 (80G) GPUs by
 ```
 accelerate launch --multi_gpu --num_processes=4 --mixed_precision=bf16 finetune_llama.py
@@ -113,12 +108,12 @@ Then finetune the 2nd stage / final answering with 2 NVIDIA H100 (80G) GPUs by
 accelerate launch --multi_gpu --num_processes=2 --mixed_precision=bf16 finetune_llama_2nd_step.py
 ```
 
-### 6.3 Evaluate the model
+### 📊 Evaluate the model
 ```
 python pan_sep_eval.py
 ```
 
-## 7. Results
+## 🏆 Results
 
 Our model achieves the following performance on :
 
@@ -156,3 +151,28 @@ Our model achieves the following performance on :
 ## 📋 License and Contributions
 
 This project is licensed under the [MIT License](LICENSE), which permits reuse, modification, and distribution for both commercial and non-commercial purposes, provided that the original license is included with any copies of the code.
+
+### 📑 DepMap Data Usage
+
+This dataset is derived from the **Broad Institute’s Cancer Dependency Map (DepMap)** and is released **strictly for non-commercial, internal research, and academic use**, consistent with [DepMap’s Terms of Use](https://depmap.org/portal/termsOfUse).  
+
+- We do **not** redistribute original DepMap files. Instead, we provide **derived, non-identifiable annotations** and **processing scripts/pointers** so that users can obtain the source data directly from DepMap after accepting its terms.  
+- The dataset is **not intended for clinical applications** and must **not** be used for any **Commercial Use** (e.g., direct sale, incorporation into a product, or training/developing/enhancing ML/AI models beyond internal academic research).  
+- Users agree to **acknowledge DepMap and the Broad Institute** using the acknowledgement wording specified by DepMap.  
+- Users must respect any **third-party rights** that may attach to the underlying data, preserve confidentiality, and refrain from any **re-identification attempts**.  
+
+⚠️ *This statement summarizes our compliance posture and does not constitute legal advice. Users are responsible for ensuring their own compliance with DepMap’s Terms of Use and applicable policies.*  
+
+## 📜 Citation
+
+If you use this model, please cite:
+
+```bibtex
+@article{zhang2025galax,
+  title     = {GALAX: Graph-Augmented Language Model for Explainable Reinforcement-Guided Subgraph Reasoning in Precision Medicine},
+  author    = {Zhang, Heming and Huang, Di and Li, Wenyu and Province, Michael and Chen, Yixin and Payne, Philip and Li, Fuhai},
+  journal   = {arXiv preprint arXiv:2509.20935},
+  year      = {2025},
+  doi       = {10.48550/arXiv.2509.20935},
+  url       = {https://arxiv.org/abs/2509.20935}
+}
